@@ -1,0 +1,48 @@
+name: Build and Release ThaiPUA
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Create venv and Install Dependencies
+        run: |
+          python -m venv venv
+          .\venv\Scripts\Activate.ps1
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Build Standalone App with pyside6-deploy
+        run: |
+          .\venv\Scripts\Activate.ps1
+          pyside6-deploy -c pysidedeploy.spec
+
+      - name: Compress Release Bundle
+        run: |
+          Compress-Archive -Path build/thaipua.dist/* -DestinationPath ThaiPUA-Windows.zip
+
+      - name: Create GitHub Release and Upload Asset
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: ThaiPUA-Windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
