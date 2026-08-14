@@ -1,0 +1,107 @@
+[build-system]
+requires = ["setuptools>=81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thaipua"
+version = "0.1.0"
+description = "Converts Thai text to PUA Unicode and builds composed fonts mapped to PUA code points for games lacking proper complex Thai script rendering support."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6",
+    "fonttools",
+    "pyqtdarktheme-fork",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+	"nuitka",
+	"imageio",
+]
+
+[project.gui-scripts]
+thaipua = "thaipua.app:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+thaipua = ["py.typed"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint]
+select = [
+    "B",    # flake8-bugbear
+    "E",    # pycodestyle Errors
+    "F",    # Pyflakes
+    "G",    # flake8-logging-format
+    "I",    # isort
+    "N",    # pep8-naming
+    "PT",   # flake8-pytest-style
+    "UP",   # pyupgrade
+    "ERA",  # eradicate
+    "RUF",  # ruff-specific rules
+    "SIM",  # flake8-simplify
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pep8-naming]
+extend-ignore-names = [
+    "addComponent",
+    "closeEvent",
+    "closeSubpath",
+    "cubicTo",
+    "enterEvent",
+    "leaveEvent",
+    "lineTo",
+    "mouseDoubleClickEvent",
+    "mouseMoveEvent",
+    "mousePressEvent",
+    "mouseReleaseEvent",
+    "moveTo",
+    "paintEvent",
+    "quadTo",
+    "resizeEvent",
+    "wheelEvent",
+    "_closePath",
+    "_curveToOne",
+    "_endPath",
+    "_lineTo",
+    "_moveTo",
+    "_qCurveToOne",
+    "glyphName",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "PySide6.*",
+    "fontTools.*",
+    "qdarktheme.*",
+    "darkdetect.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=src --cov-report=term-missing"
