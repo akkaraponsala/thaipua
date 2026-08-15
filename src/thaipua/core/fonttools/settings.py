@@ -469,9 +469,8 @@ def _build_replacement_rules(value: Any, cp_str: str) -> list[SubstitutionRule]:
     - a shorthand dict `{"replacement": ..., "conditions": [...]}` — wrapped as a one-item list;
     - a list of `{"replacement": ..., "conditions": [...]}` objects — built rule-by-rule.
 
-    A later rule whose canonicalised `conditions` equal an earlier rule's replaces it (last-seen
-    wins), so legacy files that split a vowel-family trigger across `{vowel, tone_mark}` and
-    `{vowel}` entries collapse to a single rule instead of leaving two rules tied on length.
+    A later rule whose canonicalised `conditions` equal an earlier rule's replaces it
+    (last-seen wins).
     """
     if isinstance(value, dict):
         rule = _build_replacement_rule(value, cp_str)

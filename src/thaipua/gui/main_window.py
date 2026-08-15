@@ -252,13 +252,7 @@ class MainWindow(QMainWindow):
         self._preview_pane.refresh()
 
     def _on_consonant_clicked(self, cons_uni: int) -> None:
-        """Transition the grid into the PUA page for `cons_uni`.
-
-        No-ops without a loaded font: there is nothing to compose or preview, so the
-        per-consonant controls must stay disabled. The grid is already non-interactive
-        without a font (`GlyphGridPane.set_font_loaded`); this guard is a defensive
-        backstop in case the slot is reached programmatically.
-        """
+        """Transition the grid into the PUA page for `cons_uni`; no-op without a loaded font."""
         if not self._service.is_loaded:
             return
         self._state.active_consonant_uni = cons_uni
@@ -365,6 +359,7 @@ class MainWindow(QMainWindow):
         family, so the latest write across tone variants of one family wins.
         """
         spec = self._active_spec()
+        codepoint: int | None
         if role == SUB_CONSONANT:
             cons_uni_or_none = self._state.active_consonant_uni
             if cons_uni_or_none is None:

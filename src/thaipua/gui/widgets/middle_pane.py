@@ -296,10 +296,6 @@ class _Viewport(QWidget):
             return True
         return False
 
-    def ensure_glyph_visible(self) -> None:
-        """Ensure the current glyph bbox is visible inside the viewport."""
-        self._ensure_glyph_visible()
-
     def paintEvent(self, event: QPaintEvent) -> None:
         """Paint the canvas background, guides, and glyph path with pan/zoom applied."""
         palette = theme.get_palette()
@@ -538,10 +534,6 @@ class GlyphPreviewPane(QWidget):
     def clear(self) -> None:
         """Reset the preview to its empty placeholder state."""
         self._viewport.set_glyph(None, None)
-
-    def ensure_glyph_visible(self) -> None:
-        """Ensure the current glyph bbox is visible inside the viewport."""
-        self._viewport.ensure_glyph_visible()
 
     def refresh(self) -> None:
         """Repaint the canvas so it picks up the active theme palette.

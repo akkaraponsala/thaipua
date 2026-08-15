@@ -486,23 +486,18 @@ class _NullPath:
     """No-op `PathLike` so `regenerate_composite` can run without rendering."""
 
     def moveTo(self, x: float, y: float) -> None:
-        """Discard the move-to primitive (no rendering sink wired up)."""
         return
 
     def lineTo(self, x: float, y: float) -> None:
-        """Discard a straight segment."""
         return
 
     def quadTo(self, x1: float, y1: float, x2: float, y2: float) -> None:
-        """Discard a quadratic curve."""
         return
 
     def cubicTo(self, x1: float, y1: float, x2: float, y2: float, x3: float, y3: float) -> None:
-        """Discard a cubic curve."""
         return
 
     def closeSubpath(self) -> None:
-        """Discard a closed-path call."""
         return
 
 
