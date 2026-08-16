@@ -1,4 +1,4 @@
-# AGENTS.md
+## Repository Guidelines
 
 This document summarizes how to work with the thaipua repository: how it's organized, how to build, test, lint, and contribute. It mirrors our actual tooling and CI while providing quick commands for local development.
 
@@ -28,41 +28,33 @@ Notes:
 
 ## Build, Test, and Development Commands
 
-Python — requires Python 3.12+. Create and activate a virtual environment (once), then install with dev deps:
-
+- Set up dev environment:
 ```bash
-python -m venv venv
-# Windows (PowerShell): .\venv\Scripts\Activate.ps1
-# macOS / Linux: source venv/bin/activate
-pip install -e .[dev]
-```
-
-- Run the app:
-```bash
-python -m thaipua   # or the installed `thaipua` GUI entry point
+uv venv --python 3.12
+uv sync
 ```
 
 - Lint and format (ruff):
 ```bash
-ruff format .
-ruff check .
+uv run ruff format .
+uv run ruff check .
 ```
 
 - Type check (mypy, `strict`):
 ```bash
-mypy .
+uv run mypy .
 ```
 
 - Run tests (always with coverage):
 ```bash
-pytest              # addopts: --cov=src --cov-report=term-missing
+uv run pytest
 ```
 
 - Build the standalone bundle (from the repo root; output at `build/thaipua.dist/`):
 ```bash
-pyside6-deploy -c pysidedeploy.spec
+uv run pyside6-deploy -c pysidedeploy.spec
 ```
-`pysidedeploy.spec` pins a machine-specific `python_path` — update it to your venv's interpreter before building.
+`pysidedeploy.spec` pins a machine-specific `python_path` — update it to `.venv/Scripts/python.exe` (Windows) or `.venv/bin/python` (macOS/Linux) before building.
 
 ### Runtime data (dev runs write to the repo root)
 
@@ -72,12 +64,12 @@ pyside6-deploy -c pysidedeploy.spec
 - `profiles/default.json` (seeded) and `profiles/<stem>.json` (written on Save Font)
 - `settings.json` (theme mode)
 
-Profile resolution tiers for a font: `profiles/<stem>.json` -> `profiles/<family>.json` (family = pre-hyphen stem) -> `default.json` -> built-in defaults. Don't commit these generated files (`.gitignore` doesn't cover them, so `git add .` will stage them).
+Profile resolution tiers for a font: `profiles/<stem>.json` -> `profiles/<family>.json` (family = pre-hyphen stem) -> `default.json` -> built-in defaults.
 
 ## Coding Style & Naming Conventions
 
 - 4-space indentation; modules/functions in `snake_case`, classes in `PascalCase`.
-- ruff: line-length 120, double quotes. Run `ruff format .` before committing; `ruff check .` enforces import hygiene and lint rules (B, E, F, G, I, N, PT, UP, ERA, RUF, SIM).
+- ruff: line-length 120, double quotes. Run `uv run ruff format .` before committing; `uv run ruff check .` enforces import hygiene and lint rules (B, E, F, G, I, N, PT, UP, ERA, RUF, SIM).
 - mypy `strict` with `disallow_untyped_defs`; PySide6/fontTools/qdarktheme/darkdetect are `ignore_missing_imports`.
 - pep8-naming ignores Qt/fontTools camelCase method names (`paintEvent`, `addComponent`, `closeEvent`, ...) — extend that ignore list in `pyproject.toml` when adding new Qt/fontTools overrides.
 - Prefer explicit, structured error handling: raise typed exceptions (`StringTableError`, `RuntimeError`) or log via `logging` module; only deliberately swallow in fallback paths (e.g. `FontService.close`).
@@ -98,9 +90,8 @@ Profile resolution tiers for a font: `profiles/<stem>.json` -> `profiles/<family
   - `fix: preserve source encoding in string tables`
   - `docs: update installation instructions`
 - Reference related issues and provide brief context in the PR body.
-- PRs should describe scope and list the local commands run (`ruff check .`, `mypy .`, `pytest`).
-- Never commit generated runtime files (`pua_mapping.json`, `profiles/*.json`, `settings.json`).
+- PRs should describe scope and list the local commands run (`uv run ruff check .`, `uv run mypy .`, `uv run pytest`).
 
 ## CI Mirrors Local Commands
 
-Our GitHub Actions workflow (`.github/workflows/release.yml`) builds a Windows standalone bundle on `v*` tags: Python 3.12, `pip install -e .[dev]`, then `pyside6-deploy -c pysidedeploy.spec`, zipping `build/thaipua.dist/` into the release. There are no lint/test CI jobs yet — run the commands in this document locally so releases stay green.
+Our GitHub Actions workflow (`.github/workflows/release.yml`) builds a Windows standalone bundle on `v*` tags: Python 3.12, `uv sync`, then `uv run pyside6-deploy -c pysidedeploy.spec`, zipping `build/thaipua.dist/` into the release. There are no lint/test CI jobs yet — run the commands in this document locally so releases stay green.

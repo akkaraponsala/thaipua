@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ThaiPUA
+pua_mapping.json
+profiles/
+settings.json

@@ -20,8 +20,18 @@ dev = [
     "mypy",
     "pytest",
     "pytest-cov",
-	"nuitka",
-	"imageio",
+    "nuitka",
+    "imageio",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "nuitka",
+    "imageio",
 ]
 
 [project.gui-scripts]
@@ -35,6 +45,10 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 thaipua = ["py.typed"]
+
+[tool.uv]
+managed = true
+default-groups = ["dev"]
 
 [tool.ruff]
 line-length = 120
