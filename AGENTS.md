@@ -22,6 +22,7 @@ Notes:
 - Layering: `FontService` is the only GUI -> core facade (owns the live `ThaiPuaFontGenerator`); `MainWindow` is the single mutator of `AppState`; panes only emit signals.
 - Keep `thaipua.core` and `gui.state` / `gui.font_service` / `gui.glyph_pen` **PySide6-free** (stdlib + fontTools only). Only `thaipua.app`, `gui/icons.py`, `gui/main_window.py`, `gui/theme.py`, and `gui/widgets/*` may import PySide6.
 - Rebuilding a composite requires **evicting the glyph first** (`_evict_composite` in `font_service.py`): `create_composite` skips any codepoint already in cmap (its `[SKIP-OWNED]` guard), so live preview edits would otherwise be silently dropped.
+- PUA allocation stays clear of the loaded font's cmap: `ensure_pua_map` reserves the font's PUA codepoints during allocation (`_occupied_pua_chars`) and repairs a pre-existing `pua_mapping.json` colliding with the font (`_foreign_pua_chars` + `reallocate_colliding_entries`), reallocating collisions to fresh slots. Composite PUA glyphs are presumed generated earlier by this tool and left alone; cmap entries whose glyph is absent from `glyf` still count as foreign.
 - `CompositeSpec` is derived from `pua_mapping.json` keys (consonant + combining marks -> single PUA char). SARA AM U+0E33 is normalized to NIKKHIT U+0E4D + SARA AA U+0E32 everywhere; keys never contain U+0E33.
 - Offset precedence in `ConsonantSettings.offset_for`: `combo_offsets` -> `mark_offsets` -> `base_offsets` -> (0,0); a tone stacked on an above vowel resolves its base tier against the `tone_mark_on_above_vowel` role.
 
@@ -61,16 +62,17 @@ pytest              # addopts: --cov=src --cov-report=term-missing
 ```bash
 pyside6-deploy -c pysidedeploy.spec
 ```
+`pysidedeploy.spec` pins a machine-specific `python_path` — update it to your venv's interpreter before building.
 
 ### Runtime data (dev runs write to the repo root)
 
 `core/constants.py` sets `APP_DATA_DIR` to the repo root when run from source (the exe's dir for standalone builds). On startup/font load the app creates and mutates, at the repo root:
 
-- `pua_mapping.json` — auto-allocated with a PUA codepoint (starting U+E000) for every consonant+suffix combo when missing
+- `pua_mapping.json` — auto-allocated with a PUA codepoint (starting U+E000) for every consonant+suffix combo when missing; pre-existing entries colliding with the loaded font's cmap are reallocated on load
 - `profiles/default.json` (seeded) and `profiles/<stem>.json` (written on Save Font)
 - `settings.json` (theme mode)
 
-Profile resolution tiers for a font: `profiles/<stem>.json` -> `profiles/<family>.json` (family = pre-hyphen stem) -> `default.json` -> built-in defaults. Don't commit these generated files.
+Profile resolution tiers for a font: `profiles/<stem>.json` -> `profiles/<family>.json` (family = pre-hyphen stem) -> `default.json` -> built-in defaults. Don't commit these generated files (`.gitignore` doesn't cover them, so `git add .` will stage them).
 
 ## Coding Style & Naming Conventions
 
@@ -82,7 +84,8 @@ Profile resolution tiers for a font: `profiles/<stem>.json` -> `profiles/<family
 
 ## Testing Guidelines
 
-- There is no `tests/` directory yet — `pytest` reports "no tests ran"; don't expect existing tests. Place new tests under `tests/`, named `test_*.py`.
+- Tests live under `tests/`, named `test_*.py`: `test_pua_allocator.py` covers allocation and collision reallocation (`reallocate_colliding_entries`, `extend_pua_mapping` with `reserved_pua_chars`), and `test_font_service.py` covers the font-aware collision handling with duck-typed `TTFont`/`glyf` fakes (no real font needed). Extend these when touching those paths.
+- `mypy .` type-checks `tests/` under `strict` too — duck-typed fakes need explicit `cast`/annotations (see the `_FakeFont` stubs in `test_font_service.py`).
 - The PySide6-free layers (`core/`, `gui/state.py`, `gui/font_service.py`, `gui/glyph_pen.py`) are unit-testable without a `QApplication` — keep them that way. `glyph_pen` renders into a duck-typed `PathLike` so tests substitute a light recorder.
 - `ensure_app_data_dirs` accepts a `base_dir` argument for `tmp_path` isolation; theme/profile/PUA-map helpers accept explicit paths so tests never touch the repo root.
 - Use `assets/fonts/Sarabun-Regular.ttf` as a sample source font in tests.
