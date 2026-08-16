@@ -213,7 +213,10 @@ class FontService:
     def _foreign_pua_chars(self) -> set[str]:
         """Return PUA characters the loaded font maps to non-composite glyphs.
 
-        Composite glyphs are excluded (presumed generated earlier by this tool).
+        Composite glyphs are excluded (presumed generated earlier by this tool) and
+        only counted in a log line, so a third-party composite squatting on a PUA slot
+        stays observable. Cmap entries whose glyph is absent from `glyf` still count
+        as foreign: `create_composite`'s skip guard consults the cmap, not `glyf`.
         Returns an empty set when no font is loaded, and every occupied PUA character
         when the font has no `glyf` table.
         """
@@ -224,14 +227,18 @@ class FontService:
         if glyf is None:
             return self._occupied_pua_chars()
         occupied = set()
+        owned_composites = 0
         for cp, glyph_name in font.getBestCmap().items():
             if not (PUA_RANGE_START <= cp <= PUA_RANGE_END):
                 continue
-            if glyph_name not in glyf:
-                continue
-            if glyf[glyph_name].isComposite():
+            if glyph_name in glyf and glyf[glyph_name].isComposite():
+                owned_composites += 1
                 continue
             occupied.add(chr(cp))
+        if owned_composites:
+            logger.info(
+                "Treating %d PUA codepoint(s) mapped to composite glyphs as owned by this tool", owned_composites
+            )
         return occupied
 
     def _repair_pua_map(self, mapping: dict[str, str]) -> dict[str, str]:
@@ -244,8 +251,8 @@ class FontService:
         repaired = reallocate_colliding_entries(mapping, self._foreign_pua_chars())
         if repaired != mapping:
             moved = sum(1 for key, old in mapping.items() if repaired.get(key) != old)
-            self._pua_map = repaired
             self.save_pua_map(repaired)
+            self._pua_map = repaired
             logger.warning("PUA map repaired: reallocated %d entry(ies) in %s", moved, self._pua_map_path)
         return repaired
 

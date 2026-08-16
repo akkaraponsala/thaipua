@@ -147,7 +147,7 @@ def reallocate_colliding_entries(
         RuntimeError: No PUA codepoint is free from `start_pua` through `PUA_RANGE_END`.
     """
     if not occupied_pua_chars:
-        return mapping
+        return dict(mapping)
     used_pua_chars = set(mapping.values()) | occupied_pua_chars
     next_pua = start_pua
     updated = dict(mapping)

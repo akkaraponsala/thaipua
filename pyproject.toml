@@ -87,6 +87,8 @@ extend-ignore-names = [
     "_moveTo",
     "_qCurveToOne",
     "glyphName",
+    "isComposite",
+    "getBestCmap",
 ]
 
 [tool.mypy]
