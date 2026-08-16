@@ -131,20 +131,63 @@ def save_pua_map(mapping: dict[str, str], filename: str) -> None:
         logger.exception("Failed to write map file: %s", filename)
 
 
-def extend_pua_mapping(
-    suffixes: list[str], filename: str = DEFAULT_PUA_MAP_PATH, start_pua: int = PUA_RANGE_START
-) -> None:
-    """Extend the on-disk PUA mapping at `filename`.
+def reallocate_colliding_entries(
+    mapping: dict[str, str],
+    occupied_pua_chars: set[str],
+    start_pua: int = PUA_RANGE_START,
+) -> dict[str, str]:
+    """Reallocate entries of `mapping` whose PUA char appears in `occupied_pua_chars`.
 
-    Walks `THAI_CONSONANTS` in order, and for each consonant walks `suffixes` to
-    allocate consecutive PUA codepoints for that consonant's suffix block. Keys
-    already present in the on-disk mapping are skipped individually, so a partial run
-    extends the file rather than regenerating it whole. `start_pua` is the inclusive
-    lower bound for newly allocated codepoints.
+    Each colliding entry's value is reassigned to the lowest free PUA codepoint at or
+    above `start_pua`, skipping the mapping's remaining values, `occupied_pua_chars`,
+    and codepoints assigned earlier in this pass. Returns a copy of `mapping` with the
+    colliding values replaced; the caller persists it.
+
+    Raises:
+        RuntimeError: No PUA codepoint is free from `start_pua` through `PUA_RANGE_END`.
+    """
+    if not occupied_pua_chars:
+        return mapping
+    used_pua_chars = set(mapping.values()) | occupied_pua_chars
+    next_pua = start_pua
+    updated = dict(mapping)
+    for thai_key, pua_char in mapping.items():
+        if pua_char not in occupied_pua_chars:
+            continue
+        while next_pua <= PUA_RANGE_END and chr(next_pua) in used_pua_chars:
+            next_pua += 1
+        if next_pua > PUA_RANGE_END:
+            raise RuntimeError(f"No free PUA codepoint between U+{next_pua:04X} and U+{PUA_RANGE_END:04X}")
+        fresh_char = chr(next_pua)
+        updated[thai_key] = fresh_char
+        used_pua_chars.add(fresh_char)
+        next_pua += 1
+        logger.warning(
+            "Reallocated %r from U+%04X to U+%04X (occupied in the font's cmap)",
+            thai_key,
+            ord(pua_char),
+            ord(fresh_char),
+        )
+    return updated
+
+
+def extend_pua_mapping(
+    suffixes: list[str],
+    filename: str = DEFAULT_PUA_MAP_PATH,
+    start_pua: int = PUA_RANGE_START,
+    reserved_pua_chars: set[str] | None = None,
+) -> None:
+    """Extend the on-disk PUA mapping at `filename` with new consonant/suffix entries.
+
+    Walks `THAI_CONSONANTS` and `suffixes` in order, allocating consecutive PUA
+    codepoints per consonant block from `start_pua`. Already-mapped keys are skipped
+    individually. `reserved_pua_chars` are treated as in use by the allocation scan.
     """
     current_mapping = load_pua_map_dict(filename)
     mapped_thai_keys = set(current_mapping.keys())
     used_pua_chars = set(current_mapping.values())
+    if reserved_pua_chars:
+        used_pua_chars.update(reserved_pua_chars)
     next_pua = find_next_free_pua_codepoint(start_pua, used_pua_chars)
     new_entries = {}
     for consonant in THAI_CONSONANTS:

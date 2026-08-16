@@ -22,7 +22,7 @@ from typing import Any
 
 from fontTools.ttLib import TTFont
 
-from thaipua.core.constants import DEFAULT_PROFILES_DIR, DEFAULT_PUA_MAP_PATH, PUA_RANGE_START
+from thaipua.core.constants import DEFAULT_PROFILES_DIR, DEFAULT_PUA_MAP_PATH, PUA_RANGE_END, PUA_RANGE_START
 from thaipua.core.encoding import load_pua_map_dict
 from thaipua.core.fonttools.alternates import GlyphSubstitution, find_glyph_substitutions
 from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
@@ -165,16 +165,18 @@ class FontService:
         return self._pua_map
 
     def ensure_pua_map(self) -> dict[str, str]:
-        """Load the Thai-to-PUA map, allocating a full one when it is empty/missing.
+        """Load the Thai-to-PUA map from the stored path, returning it ready for use.
 
-        Reads from the stored map path; when no mapping exists yet (missing or empty
-        file), `extend_pua_mapping` allocates every consonant/suffix combination on disk
-        before reloading, so the map is always usable after a font loads.
+        Allocates a full mapping when the file is missing or empty. A pre-existing
+        mapping whose entries collide with the loaded font's cmap is repaired and
+        persisted.
         """
         mapping = self.load_pua_map()
         if not mapping:
             logger.info("PUA map empty at %s; allocating full mapping", self._pua_map_path)
             mapping = self.extend_pua_mapping()
+        else:
+            mapping = self._repair_pua_map(mapping)
         return mapping
 
     def save_pua_map(self, mapping: dict[str, str]) -> None:
@@ -186,12 +188,66 @@ class FontService:
     def extend_pua_mapping(self) -> dict[str, str]:
         """Allocate PUA codepoints for every consonant/suffix combination.
 
-        Returns the freshly reloaded map and updates the in-memory copy.
+        Codepoints mapped in the live font's cmap are reserved, so allocations never
+        collide with the font. Returns the freshly reloaded map.
         """
         from thaipua.core.pua_allocator import extend_pua_mapping
 
-        extend_pua_mapping(THAI_SUFFIXES, filename=self._pua_map_path, start_pua=PUA_RANGE_START)
+        extend_pua_mapping(
+            THAI_SUFFIXES,
+            filename=self._pua_map_path,
+            start_pua=PUA_RANGE_START,
+            reserved_pua_chars=self._occupied_pua_chars(),
+        )
         return self.load_pua_map()
+
+    def _occupied_pua_chars(self) -> set[str]:
+        """Return PUA characters mapped in the live font's cmap.
+
+        Returns an empty set when no font is loaded.
+        """
+        if self._gen is None or self._gen.font is None:
+            return set()
+        return {chr(cp) for cp in self._gen.font.getBestCmap() if PUA_RANGE_START <= cp <= PUA_RANGE_END}
+
+    def _foreign_pua_chars(self) -> set[str]:
+        """Return PUA characters the loaded font maps to non-composite glyphs.
+
+        Composite glyphs are excluded (presumed generated earlier by this tool).
+        Returns an empty set when no font is loaded, and every occupied PUA character
+        when the font has no `glyf` table.
+        """
+        if self._gen is None or self._gen.font is None:
+            return set()
+        font = self._gen.font
+        glyf = font.get("glyf")
+        if glyf is None:
+            return self._occupied_pua_chars()
+        occupied = set()
+        for cp, glyph_name in font.getBestCmap().items():
+            if not (PUA_RANGE_START <= cp <= PUA_RANGE_END):
+                continue
+            if glyph_name not in glyf:
+                continue
+            if glyf[glyph_name].isComposite():
+                continue
+            occupied.add(chr(cp))
+        return occupied
+
+    def _repair_pua_map(self, mapping: dict[str, str]) -> dict[str, str]:
+        """Reallocate entries colliding with the live font's cmap and persist the result.
+
+        Returns the repaired (possibly unchanged) map.
+        """
+        from thaipua.core.pua_allocator import reallocate_colliding_entries
+
+        repaired = reallocate_colliding_entries(mapping, self._foreign_pua_chars())
+        if repaired != mapping:
+            moved = sum(1 for key, old in mapping.items() if repaired.get(key) != old)
+            self._pua_map = repaired
+            self.save_pua_map(repaired)
+            logger.warning("PUA map repaired: reallocated %d entry(ies) in %s", moved, self._pua_map_path)
+        return repaired
 
     def glyph_name_for(self, codepoint: int) -> str | None:
         """Return the font's glyph name for `codepoint`, or `None` when unmapped."""
