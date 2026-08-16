@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thaipua"
-version = "0.1.0"
+version = "0.1.1"
 description = "Converts Thai text to PUA Unicode and builds composed fonts mapped to PUA code points for games lacking proper complex Thai script rendering support."
 readme = "README.md"
 requires-python = ">=3.12"
