@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fontTools.ttLib import TTLibError
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QFont, QFontDatabase, QPainterPath
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
 
@@ -72,6 +72,10 @@ class MainWindow(QMainWindow):
         self._sub_catalog: dict[str, list[GlyphSubstitution]] = {}
         self._settings_generation = 0
         self._installed_generations: dict[int, int] = {}
+        self._grid_refresh_timer = QTimer(self)
+        self._grid_refresh_timer.setSingleShot(True)
+        self._grid_refresh_timer.setInterval(300)
+        self._grid_refresh_timer.timeout.connect(self._refresh_left_pane)
         self._build_layout()
         self._connect_signals()
         theme.apply_theme(mode=theme.load_theme_mode())
@@ -327,6 +331,7 @@ class MainWindow(QMainWindow):
         self._settings_generation += 1
         apply_offset(spec, self._state.settings, x, y, category=self._current_category)
         self._render_pua_spec(spec, mark_dirty=True)
+        self._schedule_grid_refresh()
 
     def _on_base_offset_changed(self, role: str, x: int, y: int) -> None:
         """Live-commit a per-consonant base-offset delta and re-render the glyph.
@@ -345,6 +350,7 @@ class MainWindow(QMainWindow):
         spec = self._active_spec()
         if spec is not None:
             self._render_pua_spec(spec)
+        self._schedule_grid_refresh()
 
     def _on_glyph_substitution_changed(self, role: str, glyph_name: str) -> None:
         """Live-commit a contextual glyph substitution and re-render the glyph.
@@ -391,6 +397,7 @@ class MainWindow(QMainWindow):
         spec_after = self._active_spec()
         if spec_after is not None:
             self._render_pua_spec(spec_after)
+        self._schedule_grid_refresh()
 
     def _on_snap_changed(self, snap_name: str, enabled: bool, gap: int) -> None:
         """Live-commit a per-consonant snap pair and re-render the glyph.
@@ -409,6 +416,7 @@ class MainWindow(QMainWindow):
         spec = self._active_spec()
         if spec is not None:
             self._render_pua_spec(spec)
+        self._schedule_grid_refresh()
 
     def _on_category_changed(self, category: object) -> None:
         """Reload X/Y inputs for the newly-selected radio category's role.
@@ -495,6 +503,16 @@ class MainWindow(QMainWindow):
         else:
             self._show_pua_page()
 
+    def _schedule_grid_refresh(self) -> None:
+        """Debounce a left-pane re-render after a settings mutation.
+
+        The PUA grid is not live: its cell paths are recomputed once the settings have
+        settled, so fast slider drags only re-render the viewport (which rebuilds the
+        single active composite per tick) while the grid catches up 300 ms after the
+        last change.
+        """
+        self._grid_refresh_timer.start()
+
     def _show_consonants_page(self) -> None:
         """Render the current consonant-index page (clamped pagination)."""
         cons = inference_supported_consonants()
@@ -517,10 +535,16 @@ class MainWindow(QMainWindow):
         page = self._state.pua_page
         start = page * GRID_PAGE_SIZE
         slice_specs = specs[start : start + GRID_PAGE_SIZE]
-        visuals = [
-            CellVisual(key=spec.pua_code, display_text=spec.thai_key, subtitle=f"U+{spec.pua_code:04X}")
-            for spec in slice_specs
-        ]
+        visuals = []
+        for spec in slice_specs:
+            path: QPainterPath | None = None
+            if self._service.is_loaded:
+                cell_path = QPainterPath()
+                if self._service.render_composite_path(spec, self._state.settings, cell_path) is not None:
+                    path = cell_path
+            visuals.append(
+                CellVisual(key=spec.pua_code, display_text=spec.thai_key, subtitle=f"U+{spec.pua_code:04X}", path=path)
+            )
         self._grid_pane.show_pua(visuals, consonant_label=chr(cons_uni), page_index=page, total_pages=total_pages)
         if self._state.active_pua_code is not None:
             self._grid_pane.set_selected(self._state.active_pua_code)

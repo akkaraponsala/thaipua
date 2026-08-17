@@ -20,7 +20,10 @@ a `snap_configs.{pair}` entry forces the snap on/off and adds an optional `gap` 
 pair absent from the settings is off.
 
 A codepoint already mapped in the source font's cmap is preserved: `create_composite`
-logs a warning and returns without overwriting it.
+logs a warning and returns without overwriting it. `compose_components` performs the
+same resolution/layout read-only, returning `ComponentPlacement`s (glyph name + affine)
+instead of installing a glyph, so callers can preview the exact composition for any
+codepoint without mutating the font.
 """
 
 from __future__ import annotations
@@ -68,6 +71,19 @@ class _AboveVowelPlacement:
     dx: int
     dy: int
     bounding_box: BoundingBox | None
+
+
+@dataclass(slots=True, frozen=True)
+class ComponentPlacement:
+    """One resolved composite part: a glyph name and its fontTools 6-tuple affine.
+
+    `compose_components` yields these without installing anything, so callers can
+    replay the exact layout `create_composite` would produce (offsets, substitutions,
+    snaps included) into their own pen or path.
+    """
+
+    glyph_name: str
+    transform: tuple[int, int, int, int, int, int]
 
 
 class ThaiPuaFontGenerator:
@@ -209,7 +225,7 @@ class ThaiPuaFontGenerator:
 
     def _place_below_vowel(
         self,
-        pen: TTGlyphPen,
+        components: list[ComponentPlacement],
         *,
         cons_settings: ConsonantSettings,
         cons_advance: int,
@@ -244,11 +260,11 @@ class ThaiPuaFontGenerator:
             logger.info("[PLACE-BELOW-DEFAULT] %s: base_dy=%d", vowel_name, base_dy)
         dy = base_dy + offset.y
         logger.info("[PLACE-BELOW] %s: dx=%d dy=%d", vowel_name, dx, dy)
-        pen.addComponent(vowel_name, (1, 0, 0, 1, dx, dy))
+        components.append(ComponentPlacement(vowel_name, (1, 0, 0, 1, dx, dy)))
 
     def _place_above_vowel(
         self,
-        pen: TTGlyphPen,
+        components: list[ComponentPlacement],
         *,
         cons_settings: ConsonantSettings,
         cons_advance: int,
@@ -284,12 +300,12 @@ class ThaiPuaFontGenerator:
             logger.info("[PLACE-ABOVE-DEFAULT] %s: base_dy=%d", vowel_name, base_dy)
         dy = base_dy + offset.y
         logger.info("[PLACE-ABOVE] %s: dx=%d dy=%d", vowel_name, dx, dy)
-        pen.addComponent(vowel_name, (1, 0, 0, 1, dx, dy))
+        components.append(ComponentPlacement(vowel_name, (1, 0, 0, 1, dx, dy)))
         return _AboveVowelPlacement(dx, dy, vowel_box)
 
     def _place_tone(
         self,
-        pen: TTGlyphPen,
+        components: list[ComponentPlacement],
         *,
         cons_settings: ConsonantSettings,
         cons_advance: int,
@@ -333,7 +349,85 @@ class ThaiPuaFontGenerator:
             logger.info("[PLACE-TONE-DEFAULT] %s: base_dy=%d", tone_name, base_dy)
         dy = base_dy + offset.y
         logger.info("[PLACE-TONE] %s: dx=%d dy=%d", tone_name, dx, dy)
-        pen.addComponent(tone_name, (1, 0, 0, 1, dx, dy))
+        components.append(ComponentPlacement(tone_name, (1, 0, 0, 1, dx, dy)))
+
+    def compose_components(
+        self,
+        cons_uni: int,
+        below_uni: int | None,
+        above_uni: int | None,
+        tone_uni: int | None,
+        settings: PlacementSettings | None = None,
+        *,
+        pua_code: int | None = None,
+    ) -> list[ComponentPlacement] | None:
+        """Resolve and lay out the `cons_uni` + marks components under `settings`.
+
+        Pure read-only computation — resolves substitutions and computes the exact
+        offset/snap placements `create_composite` would install, but returns the
+        `ComponentPlacement` list instead of touching `glyf`/`hmtx`/`cmap`, so callers
+        can replay the layout into their own pen or path for any codepoint without
+        mutating the font. `settings=None` uses the generator's current settings.
+        Returns `None` when the resolved consonant glyph is missing from the font.
+        """
+        effective = settings if settings is not None else self.settings
+        mark_roles = set()
+        if below_uni:
+            mark_roles.add(SUB_BELOW_VOWEL)
+        if above_uni:
+            mark_roles.add(SUB_ABOVE_VOWEL)
+        if tone_uni:
+            mark_roles.add(SUB_TONE_MARK)
+        present_roles = frozenset(mark_roles)
+        cons_settings = effective.for_consonant(cons_uni)
+        actual_cons = self.resolve_consonant(cons_uni, cons_settings, present_roles=present_roles)
+        if not self.has_glyph(actual_cons):
+            logger.warning(
+                "[SKIP] U+%04X: consonant glyph '%s' (U+%04X) not found in font",
+                pua_code or 0,
+                actual_cons,
+                cons_uni,
+            )
+            return None
+        below_name = self.resolve_below_vowel(below_uni, cons_settings, present_roles=present_roles)
+        above_name = self.resolve_vowel(above_uni, cons_settings, present_roles=present_roles)
+        actual_tone_name = self.resolve_tone(tone_uni, cons_settings, present_roles=present_roles)
+        components: list[ComponentPlacement] = [ComponentPlacement(actual_cons, (1, 0, 0, 1, 0, 0))]
+        cons_advance, _cons_lsb = self.font["hmtx"][actual_cons]
+        cons_box = self.bbox.get_bounding_box(actual_cons)
+        combo_key = self._combo_key(below_uni, above_uni, tone_uni)
+        if below_name:
+            self._place_below_vowel(
+                components,
+                cons_settings=cons_settings,
+                cons_advance=cons_advance,
+                cons_bbox=cons_box,
+                below_uni=below_uni,
+                vowel_name=below_name,
+                combo_key=combo_key,
+            )
+        above_placement = None
+        if above_name:
+            above_placement = self._place_above_vowel(
+                components,
+                cons_settings=cons_settings,
+                cons_advance=cons_advance,
+                cons_bbox=cons_box,
+                above_uni=above_uni,
+                vowel_name=above_name,
+                combo_key=combo_key,
+            )
+        if actual_tone_name:
+            self._place_tone(
+                components,
+                cons_settings=cons_settings,
+                cons_advance=cons_advance,
+                tone_uni=tone_uni,
+                tone_name=actual_tone_name,
+                above_placement=above_placement,
+                combo_key=combo_key,
+            )
+        return components
 
     def create_composite(
         self, pua_code: int, cons_uni: int, below_uni: int | None, above_uni: int | None, tone_uni: int | None
@@ -341,7 +435,7 @@ class ThaiPuaFontGenerator:
         """Build and install a composite PUA glyph from consonant, vowel, and tone parts.
 
         Resolves glyphs via the per-consonant `glyph_substitutions` overrides (gated on
-        the cluster's present mark roles), then lays them out via the `_place_*` helpers
+        the cluster's present mark roles), then lays them out via `compose_components`
         and writes the assembled glyph to `glyf`/`hmtx`/`cmap` at `pua_code`, copying
         the consonant's advance width.
 
@@ -357,66 +451,17 @@ class ThaiPuaFontGenerator:
                 existing_glyph,
             )
             return
-        mark_roles = set()
-        if below_uni:
-            mark_roles.add(SUB_BELOW_VOWEL)
-        if above_uni:
-            mark_roles.add(SUB_ABOVE_VOWEL)
-        if tone_uni:
-            mark_roles.add(SUB_TONE_MARK)
-        present_roles = frozenset(mark_roles)
-        cons_settings = self.settings.for_consonant(cons_uni)
-        actual_cons = self.resolve_consonant(cons_uni, cons_settings, present_roles=present_roles)
-        if not self.has_glyph(actual_cons):
-            logger.warning(
-                "[SKIP] U+%04X: consonant glyph '%s' (U+%04X) not found in font", pua_code, actual_cons, cons_uni
-            )
+        components = self.compose_components(cons_uni, below_uni, above_uni, tone_uni, pua_code=pua_code)
+        if components is None:
             return
-        below_name = self.resolve_below_vowel(below_uni, cons_settings, present_roles=present_roles)
-        above_name = self.resolve_vowel(above_uni, cons_settings, present_roles=present_roles)
-        actual_tone_name = self.resolve_tone(tone_uni, cons_settings, present_roles=present_roles)
-        new_glyph_name = f"uni{pua_code:04X}"
         pen = TTGlyphPen(self.font.getGlyphSet())
-        pen.addComponent(actual_cons, (1, 0, 0, 1, 0, 0))
-        cons_advance, _cons_lsb = self.font["hmtx"][actual_cons]
-        cons_box = self.bbox.get_bounding_box(actual_cons)
-        combo_key = self._combo_key(below_uni, above_uni, tone_uni)
-        if below_name:
-            self._place_below_vowel(
-                pen,
-                cons_settings=cons_settings,
-                cons_advance=cons_advance,
-                cons_bbox=cons_box,
-                below_uni=below_uni,
-                vowel_name=below_name,
-                combo_key=combo_key,
-            )
-        above_placement = None
-        if above_name:
-            above_placement = self._place_above_vowel(
-                pen,
-                cons_settings=cons_settings,
-                cons_advance=cons_advance,
-                cons_bbox=cons_box,
-                above_uni=above_uni,
-                vowel_name=above_name,
-                combo_key=combo_key,
-            )
-        if actual_tone_name:
-            self._place_tone(
-                pen,
-                cons_settings=cons_settings,
-                cons_advance=cons_advance,
-                tone_uni=tone_uni,
-                tone_name=actual_tone_name,
-                above_placement=above_placement,
-                combo_key=combo_key,
-            )
+        for placement in components:
+            pen.addComponent(placement.glyph_name, placement.transform)
         new_glyph = pen.glyph()
         new_glyph.recalcBounds(self.font["glyf"])
-        self._install_composite_glyph(new_glyph_name, new_glyph, pua_code, width_from=actual_cons)
-        parts = [actual_cons]
-        parts += [f"+{n}" for n in [below_name, above_name, actual_tone_name] if n]
+        new_glyph_name = f"uni{pua_code:04X}"
+        self._install_composite_glyph(new_glyph_name, new_glyph, pua_code, width_from=components[0].glyph_name)
+        parts = [components[0].glyph_name] + [f"+{c.glyph_name}" for c in components[1:]]
         logger.info("[OK] U+%04X = %s", pua_code, " ".join(parts))
 
     def _install_composite_glyph(self, glyph_name: str, glyph: Any, unicode_point: int, width_from: str) -> None:

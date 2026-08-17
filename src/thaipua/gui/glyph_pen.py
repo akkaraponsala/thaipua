@@ -13,6 +13,7 @@ captured at construction time, with the component transform applied via a wrappe
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 from fontTools.pens.basePen import BasePen
@@ -113,3 +114,29 @@ def render_glyph_path(font: TTFont, glyph_name: str | None, path: PathLike, glyp
     gs = glyph_set if glyph_set is not None else font.getGlyphSet()
     pen = QPainterPathPen(gs, path)
     gs[glyph_name].draw(pen)
+
+
+def render_placed_components(
+    font: TTFont,
+    components: Sequence[tuple[str, Sequence[float]]],
+    path: PathLike,
+    glyph_set: Any | None = None,
+) -> None:
+    """Draw each `(glyph_name, transform)` pair of `components` into `path`.
+
+    Each transform is a fontTools 6-tuple affine applied to the component exactly like
+    `QPainterPathPen.addComponent` applies nested-component transforms, so a composite
+    layout can be previewed from placements alone — no installed glyph required.
+    Components missing from the font are skipped. `glyph_set` defaults to
+    `font.getGlyphSet()`.
+    """
+    if not components:
+        return None
+    gs = glyph_set if glyph_set is not None else font.getGlyphSet()
+    pen = QPainterPathPen(gs, path)
+    for glyph_name, transform in components:
+        if glyph_name is None or glyph_name not in font.getGlyphOrder():
+            continue
+        from fontTools.pens.transformPen import TransformPen
+
+        gs[glyph_name].draw(TransformPen(pen, transform))

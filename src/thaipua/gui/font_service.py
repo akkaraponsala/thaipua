@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,8 @@ from fontTools.ttLib import TTFont
 from thaipua.core.constants import DEFAULT_PROFILES_DIR, DEFAULT_PUA_MAP_PATH, PUA_RANGE_END, PUA_RANGE_START
 from thaipua.core.encoding import load_pua_map_dict
 from thaipua.core.fonttools.alternates import GlyphSubstitution, find_glyph_substitutions
-from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
+from thaipua.core.fonttools.bounding_box import BoundingBox
+from thaipua.core.fonttools.composer import ComponentPlacement, ThaiPuaFontGenerator
 from thaipua.core.fonttools.settings import (
     SUB_ABOVE_VOWEL,
     SUB_BELOW_VOWEL,
@@ -37,7 +39,7 @@ from thaipua.core.fonttools.settings import (
 from thaipua.core.fonttools.specs import CompositeSpec, iter_composite_specs
 from thaipua.core.profiles import resolve_settings_profile
 from thaipua.core.pua_allocator import THAI_SUFFIXES
-from thaipua.gui.glyph_pen import PathLike, render_glyph_path
+from thaipua.gui.glyph_pen import PathLike, render_glyph_path, render_placed_components
 
 logger = logging.getLogger(__name__)
 
@@ -356,23 +358,116 @@ class FontService:
             if base is None:
                 continue
             _name, (xx, xy, yx, yy, dx, dy) = component.getComponentInfo()
-            corners = (
-                (base.x_min, base.y_min),
-                (base.x_min, base.y_max),
-                (base.x_max, base.y_min),
-                (base.x_max, base.y_max),
-            )
-            x_values = [xx * cx + yx * cy + dx for cx, cy in corners]
-            y_values = [xy * cx + yy * cy + dy for cx, cy in corners]
             role = roles[index] if index < len(roles) else roles[-1]
             boxes.append(
                 ComponentBox(
                     role=role,
                     glyph_name=component.glyphName,
-                    bbox=(min(x_values), min(y_values), max(x_values), max(y_values)),
+                    bbox=self._transform_bbox(base, (xx, xy, yx, yy, dx, dy)),
                 )
             )
         return boxes
+
+    @staticmethod
+    def _transform_bbox(
+        base: BoundingBox, transform: tuple[float, float, float, float, float, float]
+    ) -> tuple[int, int, int, int]:
+        """Return `base`'s bounding box after applying the 6-tuple affine `transform`."""
+        xx, xy, yx, yy, dx, dy = transform
+        corners = (
+            (base.x_min, base.y_min),
+            (base.x_min, base.y_max),
+            (base.x_max, base.y_min),
+            (base.x_max, base.y_max),
+        )
+        x_values = [xx * cx + yx * cy + dx for cx, cy in corners]
+        y_values = [xy * cx + yy * cy + dy for cx, cy in corners]
+        return (round(min(x_values)), round(min(y_values)), round(max(x_values)), round(max(y_values)))
+
+    def _placed_component_boxes(
+        self, placements: Sequence[ComponentPlacement], spec: CompositeSpec
+    ) -> list[ComponentBox]:
+        """Compute each uninstalled placement's transformed bounding box and role.
+
+        Mirrors `_component_boxes` for the pure `compose_components` placements, so a
+        preview drawn without installing the composite still gets per-part boxes with
+        the composer's fixed add order (consonant first, then marks in spec slot order).
+        """
+        if self._gen is None:
+            return []
+        roles = [SUB_CONSONANT]
+        if spec.below_uni:
+            roles.append(SUB_BELOW_VOWEL)
+        if spec.above_uni:
+            roles.append(SUB_ABOVE_VOWEL)
+        if spec.tone_uni:
+            roles.append(SUB_TONE_MARK)
+        boxes = []
+        for index, placement in enumerate(placements):
+            base = self._gen.bbox.get_bounding_box(placement.glyph_name)
+            if base is None:
+                continue
+            role = roles[index] if index < len(roles) else roles[-1]
+            boxes.append(
+                ComponentBox(
+                    role=role,
+                    glyph_name=placement.glyph_name,
+                    bbox=self._transform_bbox(base, placement.transform),
+                )
+            )
+        return boxes
+
+    def render_composite_path(
+        self, spec: CompositeSpec, settings: PlacementSettings, path: PathLike
+    ) -> GlyphRender | None:
+        """Draw `spec` composed under `settings` into `path` without mutating the font.
+
+        Non-mutating: placements come from the generator's read-only
+        `compose_components`, so the grid can preview live offsets/substitutions/snaps
+        for any codepoint — installed or not — with no eviction, no `[SKIP-OWNED]`
+        guard interaction, and no change to the installed-composite bookkeeping.
+        Returns `None` when the consonant glyph is missing from the font (nothing
+        drawn).
+        """
+        if self._gen is None or self._gen.font is None:
+            return None
+        placements = self._gen.compose_components(
+            spec.cons_uni,
+            spec.below_uni,
+            spec.above_uni,
+            spec.tone_uni,
+            settings=settings,
+            pua_code=spec.pua_code,
+        )
+        if placements is None:
+            return None
+        font = self._gen.font
+        upem = _units_per_em(font)
+        asc, desc, cap, xh = _font_metrics(font, upem)
+        render_placed_components(font, [(c.glyph_name, c.transform) for c in placements], path)
+        boxes = self._placed_component_boxes(placements, spec)
+        bbox = (
+            (
+                min(b.bbox[0] for b in boxes),
+                min(b.bbox[1] for b in boxes),
+                max(b.bbox[2] for b in boxes),
+                max(b.bbox[3] for b in boxes),
+            )
+            if boxes
+            else None
+        )
+        return GlyphRender(
+            codepoint=spec.pua_code,
+            glyph_name=f"uni{spec.pua_code:04X}",
+            units_per_em=upem,
+            advance_width=self.advance_width_for(placements[0].glyph_name),
+            bbox=bbox,
+            ascender=asc,
+            descender=desc,
+            cap_height=cap,
+            x_height=xh,
+            component_boxes=boxes,
+        )
 
     def regenerate_composite(
         self, spec: CompositeSpec, settings: PlacementSettings, path: PathLike | None

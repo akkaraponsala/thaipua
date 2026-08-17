@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QEnterEvent, QFont, QMouseEvent
+from PySide6.QtGui import QColor, QEnterEvent, QFont, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 from thaipua.gui import icons, theme
@@ -21,18 +21,84 @@ from thaipua.gui.state import GRID_COLUMNS, GRID_ROWS
 
 GridMode = Literal["consonant", "pua"]
 
+_CELL_ART_MARGIN_PX = 8
+
 
 @dataclass(slots=True)
 class CellVisual:
     """One grid cell's displayable content.
 
     `key` is a consonant codepoint on the index page or a PUA codepoint on the variant
-    page.
+    page. `path` carries a pre-composed `QPainterPath` (offsets/substitutions/snaps
+    already applied) for PUA cells; `None` falls back to rendering `display_text`.
     """
 
     key: int
     display_text: str
     subtitle: str
+    path: QPainterPath | None = None
+
+
+class _GlyphSurface(QWidget):
+    """Cell artwork area painting either a composed glyph path or plain text.
+
+    A PUA cell paints its `QPainterPath` scaled to fit the widget (y axis flipped, like
+    the preview viewport); a consonant cell paints `display_text` with the loaded font.
+    Colors are read from the active theme palette at paint time.
+    """
+
+    def __init__(self, parent: QWidget | None) -> None:
+        """Initialize an empty surface with the fallback sans-serif font."""
+        super().__init__(parent)
+        self._text = ""
+        self._path: QPainterPath | None = None
+        self._font = QFont("Tahoma", 24)
+        self._font.setStyleHint(QFont.StyleHint.SansSerif)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def set_content(self, text: str, path: QPainterPath | None) -> None:
+        """Swap the painted content to `path` (or `text` when `path` is `None`)."""
+        self._text = text
+        self._path = path
+        self.update()
+
+    def set_font(self, font: QFont | None) -> None:
+        """Apply `font` (or the default sans-serif fallback) to text painting."""
+        if font is None:
+            self._font = QFont("Tahoma", 24)
+            self._font.setStyleHint(QFont.StyleHint.SansSerif)
+        else:
+            sized = QFont(font)
+            sized.setPointSize(26)
+            self._font = sized
+        self.update()
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        """Paint the composed path (scaled to fit) or the text label."""
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        palette = theme.get_palette()
+        if self._path is not None:
+            rect = self._path.boundingRect()
+            if rect.width() <= 0 or rect.height() <= 0:
+                return
+            margin = _CELL_ART_MARGIN_PX
+            avail = self.rect().adjusted(margin, margin, -margin, -margin)
+            if avail.width() <= 0 or avail.height() <= 0:
+                return
+            scale = min(avail.width() / rect.width(), avail.height() / rect.height())
+            painter.translate(self.rect().center().x(), self.rect().center().y())
+            painter.scale(scale, -scale)
+            painter.translate(-rect.center().x(), -rect.center().y())
+            painter.setPen(QPen(QColor(palette.GLYPH_PEN), 1.0 / scale))
+            painter.setBrush(palette.GLYPH_FILL)
+            painter.drawPath(self._path)
+        elif self._text:
+            painter.setFont(self._font)
+            painter.setPen(palette.TEXT_PRIMARY)
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self._text)
 
 
 class _GlyphCell(QFrame):
@@ -53,49 +119,39 @@ class _GlyphCell(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 4, 2, 4)
         layout.setSpacing(2)
-        self._big = QLabel(self)
-        self._big.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._big.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-        self._big.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._art = _GlyphSurface(self)
         self._small = QLabel(self)
         self._small.setObjectName("Subtitle")
         self._small.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._small.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._small.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        layout.addWidget(self._big)
+        layout.addWidget(self._art)
         layout.addWidget(self._small)
         if visual is not None:
-            self._big.setText(visual.display_text)
+            self._art.set_content(visual.display_text, visual.path)
             self._small.setText(visual.subtitle)
         self._refresh_style()
 
     def rebind(self, visual: CellVisual | None) -> None:
         """Rebind this existing cell to `visual` (or `None` for an empty slot).
 
-        Reuses the live `QLabel` children and `cell_clicked` signal set up at
-        construction so the containing `QGridLayout` keeps its widget identity.
+        Reuses the live `_GlyphSurface`/`QLabel` children and `cell_clicked` signal set
+        up at construction so the containing `QGridLayout` keeps its widget identity.
         """
         self._key = visual.key if visual is not None else None
         self._empty = visual is None
         self._selected = False
         if visual is not None:
-            self._big.setText(visual.display_text)
+            self._art.set_content(visual.display_text, visual.path)
             self._small.setText(visual.subtitle)
         else:
-            self._big.setText("")
+            self._art.set_content("", None)
             self._small.setText("")
         self._refresh_style()
 
     def set_big_font(self, font: QFont | None) -> None:
-        """Apply `font` (or a default sans-serif fallback) to the big label."""
-        if font is None:
-            fallback = QFont("Tahoma", 24)
-            fallback.setStyleHint(QFont.StyleHint.SansSerif)
-            self._big.setFont(fallback)
-        else:
-            sized = QFont(font)
-            sized.setPointSize(26)
-            self._big.setFont(sized)
+        """Apply `font` (or a default sans-serif fallback) to the cell artwork."""
+        self._art.set_font(font)
 
     def set_subtitle_font(self, font: QFont) -> None:
         """Apply `font` to the subtitle (a monospace family is passed by callers)."""
