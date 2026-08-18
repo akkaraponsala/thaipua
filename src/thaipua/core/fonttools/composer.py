@@ -6,15 +6,15 @@ and tone-mark glyphs as components shifted by the consonant's advance width (by 
 Per-axis placement offsets and snapping deltas from `PlacementSettings` are layered on
 top of that base position.
 
-A placed mark's final offset resolves by precedence: a matching
-`combo_offsets[cluster_key]` entry for the role, then a matching
-`mark_offsets[role][mark]` entry, then the base fallback for the role
+A placed mark's final offset layers the per-glyph tiers on top of the base tier: a
+matching `combo_offsets[cluster_key]` entry for the role, else a matching
+`mark_offsets[role][mark]` entry, else `Offset(0, 0)`; the base fallback for the role
 (`base_offsets[base_role]`, where `base_role` is `tone_mark_on_above_vowel` for a tone
-stacked on an above vowel and the role itself otherwise), then `Offset(0, 0)`. The
-cluster key concatenates the cluster's mark characters in ascending-codepoint order.
-Glyph substitutions resolve a per-component alternate glyph via the per-consonant
-`glyph_substitutions` overrides (see `ConsonantSettings.substitution_for`). The named
-glyph is used verbatim when present, otherwise logged and ignored. For each of
+stacked on an above vowel and the role itself otherwise, else `Offset(0, 0)`) is added
+on top. The cluster key concatenates the cluster's mark characters in ascending-
+codepoint order. Glyph substitutions resolve a per-component alternate glyph via the
+per-consonant `glyph_substitutions` overrides (see `ConsonantSettings.substitution_for`).
+The named glyph is used verbatim when present, otherwise logged and ignored. For each of
 `tone_mark_to_above_vowel`, `above_vowel_to_consonant`, and `below_vowel_to_consonant`,
 a `snap_configs.{pair}` entry forces the snap on/off and adds an optional `gap` dy. A
 pair absent from the settings is off.

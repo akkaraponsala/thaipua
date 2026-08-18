@@ -10,8 +10,8 @@ single X/Y pair applies, depending on the selected radio category, to either a p
 override (`mark_offsets[role][mark_uni]`) for single-mark glyphs or to a per-combination
 override (`combo_offsets[combo_key][role]`) for the above-vowel-plus-tone category.
 Reading the current offset for a glyph resolves via `ConsonantSettings.offset_for`,
-which already follows the precedence combo_offsets -> mark_offsets -> base_offsets ->
-`Offset(0, 0)`.
+which layers the per-glyph tiers (combo, then mark) on top of the base tier
+(`base_offsets`) instead of replacing it.
 """
 
 from __future__ import annotations

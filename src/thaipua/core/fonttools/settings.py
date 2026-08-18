@@ -130,10 +130,10 @@ class ConsonantSettings:
     """Per-consonant placement, snap, and glyph-substitution overrides.
 
     Glyph substitutions are keyed by the substituted codepoint (the consonant's own for
-    a self-substitution, or a mark codepoint for a mark stacked on this consonant) and
-    scoped to this consonant. Placement precedence for a placed mark resolves as
-    `combo_offsets` -> `mark_offsets` -> `base_offsets` -> `Offset(0, 0)` (see
-    `offset_for`).
+    a self-substitution, or a mark codepoint for a mark stacked on this consonant).
+    Placement offsets layer the per-glyph tiers on top of the base tier: a placed mark
+    resolves as `(combo_offsets[combo_key] or mark_offsets[role][mark] or Offset(0, 0))`
+    plus `(base_offsets[role] or Offset(0, 0))` (see `offset_for`).
     """
 
     base_offsets: dict[str, Offset] = field(default_factory=dict)
@@ -145,14 +145,28 @@ class ConsonantSettings:
     def offset_for(
         self, role: str, *, mark_uni: int | None, combo_key: str | None, base_role: str | None = None
     ) -> Offset:
-        """Resolve the placement offset for `role` at the most specific level.
+        """Resolve the placement offset for `role` by layering the per-glyph tiers.
 
-        Precedence (first match wins): a matching `combo_offsets[combo_key]` entry for
-        `role`; a matching `mark_offsets[role][mark_uni]` entry; then
-        `base_offsets[base_role]` when set and present (else `base_offsets[role]`); and
-        `Offset(0, 0)` when no source matches. The composer passes
+        The per-glyph tiers — `combo_offsets[combo_key][role]`, then
+        `mark_offsets[role][mark_uni]` — add on top of the base tier rather than
+        replacing it, so a per-mark override shifts a role that already carries a base
+        offset instead of silencing it. The base tier resolves as
+        `base_offsets[base_role]` when set and present (else `base_offsets[role]`),
+        and `Offset(0, 0)` when no source matches either tier. The composer passes
         `ROLE_TONE_MARK_ON_ABOVE_VOWEL` as `base_role` for a tone mark stacked on an
         above vowel so that stack gets its own independent base offset.
+        """
+        specific = self._per_glyph_offset(role, mark_uni=mark_uni, combo_key=combo_key)
+        base_key = base_role if base_role is not None and base_role in self.base_offsets else role
+        base = self.base_offsets.get(base_key, Offset())
+        return Offset(specific.x + base.x, specific.y + base.y)
+
+    def _per_glyph_offset(self, role: str, *, mark_uni: int | None, combo_key: str | None) -> Offset:
+        """Return the per-glyph tier offset for `role`, or `Offset(0, 0)` when unset.
+
+        A matching `combo_offsets[combo_key]` entry for `role` wins over a matching
+        `mark_offsets[role][mark_uni]` entry (the combo covers a more specific mark
+        combination).
         """
         if combo_key is not None:
             combo = self.combo_offsets.get(combo_key)
@@ -166,9 +180,7 @@ class ConsonantSettings:
                 off = group.get(mark_uni)
                 if off is not None:
                     return off
-        if base_role is not None and base_role in self.base_offsets:
-            return self.base_offsets[base_role]
-        return self.base_offsets.get(role, Offset())
+        return Offset()
 
     def snap_for(self, snap_name: str) -> SnapConfig | None:
         """Return the snap config for `snap_name`, or `None` when none is set."""
