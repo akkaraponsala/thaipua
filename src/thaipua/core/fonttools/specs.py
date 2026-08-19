@@ -31,15 +31,12 @@ TONE_MARKS: set[int] = {3658, 3660, 3656, 3659, 3657}
 # Direction of a consonant's protruding part, used to scope consonant self-
 # substitutions: an "up" consonant (tail/loop extending above the base line, e.g. ฬ)
 # must clear the stack above, so any above vowel or tone mark triggers its
-# substitution; a "down" consonant (base or tail extending below the base line, e.g.
-# ญ ฐ ฎ ฏ) must clear the space below, so only a below vowel triggers it. Consonants
-# without a listed direction use the generic tone-within-vowel-family canonicalisation.
+# substitution. Only actively-substituted consonants are listed; all others
+# (including the down-protruding descenders ญ ฐ ฎ ฏ) fall back to the generic
+# tone-within-vowel-family canonicalisation, which keeps a below-vowel rule from
+# firing in no-below-vowel clusters while leaving a below-plus-above cluster distinct.
 CONSONANT_PROTRUSION: dict[int, str] = {
     ord("ฬ"): "up",
-    ord("ญ"): "down",
-    ord("ฐ"): "down",
-    ord("ฎ"): "down",
-    ord("ฏ"): "down",
 }
 
 
