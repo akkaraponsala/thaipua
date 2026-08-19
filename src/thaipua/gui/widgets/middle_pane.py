@@ -2,26 +2,14 @@
 
 The viewport paints a fontTools-derived `QPainterPath` at a per-font fit-to-cell scale
 that is independent of any single glyph's bounding box, so the canvas scale and the
-baseline device-Y stay identical across every PUA glyph of the same font. Each glyph is
-centered horizontally within the available area (using its `[min(xMin, 0), max(xMax,
-advance)]` content extent), while the typographic metric box `[descender - pad,
-ascender + pad]` is centered vertically so the baseline sits at a stable device
-position. Typographic guides — baseline, cap-height, x-height, and the advance width —
-run edge to edge of the canvas. For composite glyphs each placed component (consonant /
-below vowel / above vowel / tone mark) also gets its own bounding box in the shared BBox
-color.
+baseline device-Y stay identical across every PUA glyph of one font (see `_Viewport` for
+the transform and `_view_params` for the fit math). Typographic guides — baseline,
+cap-height, x-height, and the advance width — run edge to edge of the canvas; composite
+glyphs also show each placed component's bounding box.
 
-The viewport supports interactive navigation:
-
-- **Pan** by dragging with the left mouse button.
-- **Zoom** with the mouse wheel (anchored at the cursor).
-- **Double-click** resets pan/zoom to the centered fit.
-
-The pane is a pure display surface driven by the main window through these methods:
-
-- `set_metadata(codepoint, glyph_name)` updates the top-right unicode/glyph row.
-- `set_render(render, path)` swaps the painted glyph and triggers a repaint.
-- `clear()` resets the pane to the empty state.
+Pan with left-drag, zoom with the wheel (cursor-anchored), double-click resets the view.
+The pane is a pure display surface driven by the main window through `set_metadata` /
+`set_render` / `clear()`.
 """
 
 from __future__ import annotations

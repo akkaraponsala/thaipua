@@ -6,10 +6,8 @@ directly. The service is PySide6-free so its composite-regeneration and renderin
 stays unit-testable with a lightweight path-like sink (see
 `thaipua.gui.glyph_pen.PathLike`).
 
-The preview/rebuild flow evicts and re-creates a composite at the same PUA codepoint
-every time offset sliders move, so the canvas reflects whatever `PlacementSettings` the
-main window currently holds — including snapping — without ever committing to disk until
-*Save Font* is invoked.
+Live preview rebuilds the in-memory composite on every offset change (see
+`regenerate_composite`); nothing is written to disk until *Save Font*.
 """
 
 from __future__ import annotations

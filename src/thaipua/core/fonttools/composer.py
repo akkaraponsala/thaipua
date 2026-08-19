@@ -1,29 +1,11 @@
 """Composite PUA glyph assembly from a source font via advance-width composition.
 
-`ThaiPuaFontGenerator` assembles each composite glyph by adding the consonant, vowel,
-and tone-mark glyphs as components shifted by the consonant's advance width (by default
-`dx = cons_advance`, `dy = 0`), preserving the source font's vertical mark placement.
-Per-axis placement offsets and snapping deltas from `PlacementSettings` are layered on
-top of that base position.
-
-A placed mark's final offset layers the per-glyph tiers on top of the base tier: a
-matching `combo_offsets[cluster_key]` entry for the role, else a matching
-`mark_offsets[role][mark]` entry, else `Offset(0, 0)`; the base fallback for the role
-(`base_offsets[base_role]`, where `base_role` is `tone_mark_on_above_vowel` for a tone
-stacked on an above vowel and the role itself otherwise, else `Offset(0, 0)`) is added
-on top. The cluster key concatenates the cluster's mark characters in ascending-
-codepoint order. Glyph substitutions resolve a per-component alternate glyph via the
-per-consonant `glyph_substitutions` overrides (see `ConsonantSettings.substitution_for`).
-The named glyph is used verbatim when present, otherwise logged and ignored. For each of
-`tone_mark_to_above_vowel`, `above_vowel_to_consonant`, and `below_vowel_to_consonant`,
-a `snap_configs.{pair}` entry forces the snap on/off and adds an optional `gap` dy. A
-pair absent from the settings is off.
-
-A codepoint already mapped in the source font's cmap is preserved: `create_composite`
-logs a warning and returns without overwriting it. `compose_components` performs the
-same resolution/layout read-only, returning `ComponentPlacement`s (glyph name + affine)
-instead of installing a glyph, so callers can preview the exact composition for any
-codepoint without mutating the font.
+`ThaiPuaFontGenerator` stacks the consonant, vowel, and tone-mark glyphs as components
+shifted by the consonant's advance width (`dx = cons_advance`, `dy = 0`), preserving the
+source font's vertical mark placement. Per-axis offsets and snap deltas from
+`PlacementSettings` layer on top of that base — the offset tiering lives in
+`ConsonantSettings.offset_for`, the snap math in the `_place_*` methods, the cmap-skip
+guard in `create_composite`, and the read-only preview path in `compose_components`.
 """
 
 from __future__ import annotations
@@ -87,7 +69,11 @@ class ComponentPlacement:
 
 
 class ThaiPuaFontGenerator:
-    """Generates composite Thai PUA glyphs from an existing font."""
+    """Owns a loaded TTFont, its bounding-box cache, and the active `PlacementSettings`.
+
+    Installs composite PUA glyphs into the font in place; build a fresh instance per
+    output font. `compose_components` performs the same layout read-only for preview.
+    """
 
     def __init__(self, font_path: str, settings: PlacementSettings | None) -> None:
         """Load the source font and its bounding-box reader.

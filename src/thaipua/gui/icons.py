@@ -1,17 +1,14 @@
 """PySide6 `QIcon` provider backed by tinted SVG assets for the ThaiPUA toolbar and pane buttons.
 
 Every icon is a static SVG under `<assets>/icons/<name>.svg` — a 24-unit viewBox stroke
-drawing with `stroke-width="2"`, round caps/joins, and `stroke="currentColor"`. A
-private `_SvgIconEngine` substitutes `currentColor` with the requested tint at render
-time via `QSvgRenderer`, so one SVG serves every pixel size with theme-consistent
-outlines.
+drawing with `stroke-width="2"`, round caps/joins, and `stroke="currentColor"`. `Normal`
+mode is tinted with the palette's `ICON_FG` (or an explicit `color`), `Disabled` mode
+with `TEXT_DIM`: the explicit disabled tint is needed because mid-gray `Normal` strokes
+survive Qt's coarse auto-`Disabled` desaturation nearly unchanged, so a prepared dim
+tint is the only way a disabled button visibly dims.
 
-The engine paints `Normal` mode in `ICON_FG` (or an explicit `color`) and `Disabled`
-mode in the palette's `TEXT_DIM`. The explicit disabled tint is needed because mid-gray
-`Normal` strokes survive Qt's coarse auto-`Disabled` desaturation nearly unchanged; the
-prepared `TEXT_DIM` tint ensures a disabled button visibly dims.
-
-A theme switch must be followed by `clear_cache()` and a re-`setIcon` pass.
+A theme switch must be followed by `clear_cache()` and a re-`setIcon` pass — the tinted
+`QSvgRenderer` engines cache by tint.
 """
 
 from __future__ import annotations

@@ -6,9 +6,8 @@ quadratic/cubic curve, and `closePath` call to a duck-typed sink.
 a lightweight recorder — keeping this module PySide6-free so the pen logic stays unit-
 testable without a `QApplication`.
 
-Composite glyphs are decomposed by re-resolving each component through the glyph set
-captured at construction time, with the component transform applied via a wrapped
-`TransformPen`.
+Nested components are decomposed through the glyph set captured at construction time
+(see `QPainterPathPen.addComponent` and `render_placed_components`).
 """
 
 from __future__ import annotations

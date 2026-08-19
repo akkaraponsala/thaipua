@@ -2,12 +2,9 @@
 
 Drives the in-memory transforms from `thaipua.core.encoding` against disk files. Each
 target file is routed to a Creation Engine string-table transform or a plain-text
-transform depending on its extension.
-
-Source byte encodings are preserved on output: plain-text files keep the codec
-`detect_text_encoding` chooses (BOM-derived, or utf-8/cp1252 for BOM-less content), and
-string tables are rewritten with whichever codec (utf-8, or a legacy codepage such as
-cp1252) their contents were decoded with.
+transform depending on its extension. Source byte encodings are preserved on output
+(see `detect_text_encoding` for plain text and `ParsedStringTable.encoding` for string
+tables).
 """
 
 from __future__ import annotations
@@ -27,11 +24,7 @@ logger = logging.getLogger(__name__)
 def _encode_string_table_file(
     input_path: str | Path, output_path: str | Path, transform_text: Callable[[str], str]
 ) -> None:
-    """Encode every string in a string table file and write the result.
-
-    The output keeps the codec used to decode the source so the on-disk byte encoding
-    survives the roundtrip.
-    """
+    """Encode every string in a string table file and write the result."""
     parsed = parse_strings_file(input_path)
     for entry in parsed.entries:
         entry.string = transform_text(entry.string)
@@ -39,10 +32,7 @@ def _encode_string_table_file(
 
 
 def _decode_string_table_file(input_path: str | Path, output_path: str | Path, decode_table: dict[int, str]) -> None:
-    """Decode every string in a string table file and write the result.
-
-    The output keeps the codec used to decode the source.
-    """
+    """Decode every string in a string table file and write the result."""
     parsed = parse_strings_file(input_path)
     for entry in parsed.entries:
         entry.string = entry.string.translate(decode_table)
@@ -50,9 +40,9 @@ def _decode_string_table_file(input_path: str | Path, output_path: str | Path, d
 
 
 def _write_string_table_file(entries_from_src: list[StringEntry], output_path: str | Path, encoding: str) -> None:
-    """Write entries_from_src to output_path using encoding.
+    """Write `entries_from_src` to `output_path` in `encoding`.
 
-    When a transformed string cannot be encoded in encoding (possible only for mixed- or
+    When a transformed string is not encodable in `encoding` (only possible for mixed- or
     corrupt-source tables), logs a warning and rewrites the table as UTF-8 instead of
     failing the whole batch.
     """
@@ -66,7 +56,11 @@ def _write_string_table_file(entries_from_src: list[StringEntry], output_path: s
 
 
 def _process_text_file(input_path: Path, output_path: Path, transform_text: Callable[[str], str]) -> None:
-    """Transform a plain-text file, preserving its detected byte encoding."""
+    """Transform a plain-text file.
+
+    On an un-encodable result, writes UTF-8 instead with a warning; read/write failures
+    are logged, not raised.
+    """
     encoding = detect_text_encoding(input_path)
     logger.info("Processing file: '%s' (%s)", input_path, encoding)
     try:
@@ -123,10 +117,7 @@ def _process_files(
 def encode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
     """Encode Thai text in each target file to PUA codepoints.
 
-    Returns without writing when the mapping at `map_path` cannot be loaded. Output
-    keeps the source file's byte encoding: plain-text files preserve the codec chosen
-    by `detect_text_encoding`, and string tables are rewritten as their source codec
-    (utf-8 or cp1252).
+    Returns without writing when the mapping at `map_path` cannot be loaded.
     """
     encoding_map = load_encoding_map(map_path)
     if encoding_map is None:
@@ -143,10 +134,7 @@ def encode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
 def decode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
     """Decode PUA codepoints in each target file back to Thai text.
 
-    Returns without writing when the mapping at `map_path` cannot be loaded. Output
-    keeps the source file's byte encoding: plain-text files preserve the codec chosen
-    by `detect_text_encoding`, and string tables are rewritten as their source codec
-    (utf-8 or cp1252).
+    Returns without writing when the mapping at `map_path` cannot be loaded.
     """
     decode_table = load_decode_table(map_path)
     if decode_table is None:

@@ -133,7 +133,7 @@ def _extract_raw_bytes(data_block: bytes, string_offset: int, resolved_type: Fil
 def parse_strings_file(
     file_path: str | Path, *, file_type: FileType | None = None, fallback_encoding: str = "cp1252"
 ) -> ParsedStringTable:
-    """Parse a string table file into a `ParsedStringTable`, preserving directory order.
+    """Parse a string table file into a `ParsedStringTable` (directory order preserved).
 
     Strings decode as UTF-8, falling back to `fallback_encoding` for bytes that are not
     valid UTF-8; `ParsedStringTable.encoding` reports which codec was used. Entries
@@ -141,9 +141,6 @@ def parse_strings_file(
 
     Args:
         file_type: When `None`, inferred from the file extension.
-
-    Returns:
-        Entries preserve directory order.
 
     Raises:
         CorruptedStringTableError: Header or declared sizes are inconsistent with the

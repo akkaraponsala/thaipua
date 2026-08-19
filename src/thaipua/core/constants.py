@@ -27,29 +27,24 @@ def is_standalone_build() -> bool:
 
 
 def standalone_root() -> Path:
-    """Return the directory holding the running standalone executable."""
     return Path(sys.executable).resolve().parent
 
 
 def _repo_root() -> Path:
-    """Return the repository root inferred from this module's location."""
     return Path(__file__).resolve().parents[3]
 
 
 def _runtime_root() -> Path:
-    """Resolve the base directory holding both bundled assets and runtime data."""
     if is_standalone_build():
         return standalone_root()
     return _repo_root()
 
 
 def _app_data_dir() -> Path:
-    """Resolve the writable base directory for runtime data files."""
     return _runtime_root()
 
 
 def _assets_dir() -> Path:
-    """Resolve the root of the bundled `assets/` tree."""
     return _runtime_root() / "assets"
 
 

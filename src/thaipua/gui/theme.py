@@ -1,24 +1,16 @@
 """Light/Dark/System theme integration via PyQtDarkTheme.
 
-`qdarktheme.load_stylesheet("<theme>")` styles the standard Qt widgets with a Material
-grid Design palette for each of its three theme names — `dark`, `light`, and `auto` (the
-resolved OS theme). Custom-painted surfaces that the global stylesheet cannot reach —
-grid cells, the glyph canvas, and the tinted toolbar/pane icons — read the active
-palette via `get_palette()` so they stay consistent after every `apply_theme()` swap.
+qdarktheme supplies a Material palette for its three theme names — `dark`, `light`, and
+`auto` (the resolved OS theme); `apply_theme` installs the merged stylesheet plus the
+matching `Palette`, resolving `SYSTEM` via `darkdetect` so both agree on a concrete
+`light`/`dark` token. Custom-painted surfaces the global stylesheet cannot reach (grid
+cells, the glyph canvas, the tinted toolbar/pane icons) read `get_palette()` so they stay
+consistent after every swap.
 
-`apply_theme(app, mode)` installs the merged stylesheet on the live `QApplication` and
-switches the active palette. `ThemeMode.SYSTEM` resolves the host OS theme via
-`darkdetect` so the custom palette and the qdarktheme stylesheet agree on a concrete
-`light`/`dark` token; the user-selected mode (which may be `SYSTEM`) is exposed via
-`current_theme_mode()`.
-
-App-scoped, object-name-tagged widgets (`#PaneHeader`, `#MetaValue`, `QFrame#Divider`)
-are styled by `_local_overrides` on top of qdarktheme's defaults; all other standard
-widgets keep the library defaults.
-
-The selected `ThemeMode` is persisted to `DEFAULT_SETTINGS_PATH` (`settings.json`,
-resolved under the per-user app-data directory) by `load_theme_mode()` /
-`save_theme_mode()`, round-tripping the `theme` key while preserving sibling keys.
+App-scoped object-name-tagged widgets (`#PaneHeader`, `#MetaValue`, `QFrame#Divider`)
+get `_local_overrides` on top of qdarktheme's defaults. The user-selected `ThemeMode` is
+persisted to `settings.json` by `load_theme_mode()` / `save_theme_mode()`, round-tripping
+the `theme` key while preserving sibling keys.
 """
 
 from __future__ import annotations

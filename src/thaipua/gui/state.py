@@ -1,17 +1,14 @@
 """In-memory application state and offset bookkeeping for the desktop GUI.
 
 `AppState` is the single mutable object the main window swaps across panes. All
-functions in this module operate on `AppState`, `PlacementSettings`, or `CompositeSpec`
-and are deliberately PySide6-free so they remain unit-testable without a `QApplication`.
-Widgets read through the main window and never mutate state directly.
+functions here operate on `AppState`, `PlacementSettings`, or `CompositeSpec` and are
+deliberately PySide6-free so they stay unit-testable without a `QApplication`. Widgets
+read through the main window and never mutate state directly.
 
-The mark-offset model mirrors `thaipua.core.fonttools.settings.ConsonantSettings`: a
-single X/Y pair applies, depending on the selected radio category, to either a per-mark
-override (`mark_offsets[role][mark_uni]`) for single-mark glyphs or to a per-combination
-override (`combo_offsets[combo_key][role]`) for the above-vowel-plus-tone category.
-Reading the current offset for a glyph resolves via `ConsonantSettings.offset_for`,
-which layers the per-glyph tiers (combo, then mark) on top of the base tier
-(`base_offsets`) instead of replacing it.
+Mark Offset and Base Offset are independent surfaces here, mirroring
+`ConsonantSettings`: the Mark Offset functions read/write only the per-glyph
+`mark_offsets`/`combo_offsets` tiers, the Base Offset functions only `base_offsets` —
+never the two together. Tier resolution lives in `ConsonantSettings.offset_for`.
 """
 
 from __future__ import annotations

@@ -1,8 +1,6 @@
 """Top action toolbar: Open/Save Font, Decode PUA, Encode Thai, Find Substitutions, Settings.
 
-Left-aligned file/encoding actions with the Settings button pushed to the far right by a
-stretch. The toolbar emits high-level requested signals so the main window stays the
-single mutator of `AppState`.
+File/encoding actions are left-aligned; Settings is pushed to the far right by a stretch.
 """
 
 from __future__ import annotations

@@ -11,14 +11,9 @@ so the main window stays the single mutator of state:
 - `category_changed(category)` — notifies that the X/Y inputs must be reloaded for the
   newly picked role.
 
-Every group commits live: editing a control writes straight through to
-`PlacementSettings` via the main window's signal handlers. The per-consonant groups are
-gated on an active consonant (its PUA page entered); the Mark Offset group is gated on
-a selected PUA glyph.
-
-Base Offsets and Mark Offsets are fully independent: Base Offsets spin boxes read/write
-the `base_offsets` tier only, and Mark Offset sliders read/write the per-glyph
-`mark_offsets`/`combo_offsets` tiers only.
+Every group commits live through the main window's signal handlers. Per-consonant groups
+are gated on an active consonant; the Mark Offset group on a selected PUA glyph. Base and
+Mark Offsets read/write disjoint `ConsonantSettings` tiers (see `gui.state`).
 """
 
 from __future__ import annotations

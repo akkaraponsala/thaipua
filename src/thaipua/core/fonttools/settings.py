@@ -14,18 +14,8 @@ codepoint. Each consonant entry carries:
   codepoints joined by `+` in ascending order; the most specific matching role wins.
 - `snap_configs` — per-pair `{enabled, gap}` configs (or a bare boolean) for the three
   bounding-box snaps.
-- `glyph_substitutions` — per-codepoint rule lists overriding the glyph used for the
-  substituted codepoint (the consonant's own codepoint for a self-substitution, or a
-  mark codepoint for a mark stacked on the consonant). Each rule carries a `replacement`
-  and an optional `conditions` list of mark roles (AND semantics); an empty `conditions`
-  matches any context, and among matching rules the longest `conditions` wins, with ties
-  broken by list order. Within a vowel family the tone mark is a non-discriminator:
-  `conditions` and the cluster's present roles are canonicalised by dropping `tone_mark`
-  whenever an `above_vowel` or `below_vowel` is also present, so a rule authored at
-  `consonant + below_vowel` fires for every tone-bearing member of that below-vowel
-  family (and vice versa), and the same codepoint carries a single slot per vowel
-  family rather than one per tone variant. A tone-only cluster keeps `tone_mark` as its
-  own family.
+- `glyph_substitutions` — per-codepoint contextual glyph rules (see `SubstitutionRule`
+  and `canonicalise_substitution_context` for the canonicalisation and match semantics).
 
 Every codepoint key uses the canonical `U+XXXX` notation (`U+` followed by 1-6
 uppercase hex digits); direct Thai character keys are rejected.
@@ -147,14 +137,10 @@ class ConsonantSettings:
     ) -> Offset:
         """Resolve the placement offset for `role` by layering the per-glyph tiers.
 
-        The per-glyph tiers — `combo_offsets[combo_key][role]`, then
-        `mark_offsets[role][mark_uni]` — add on top of the base tier rather than
-        replacing it, so a per-mark override shifts a role that already carries a base
-        offset instead of silencing it. The base tier resolves as
-        `base_offsets[base_role]` when set and present (else `base_offsets[role]`),
-        and `Offset(0, 0)` when no source matches either tier. The composer passes
-        `ROLE_TONE_MARK_ON_ABOVE_VOWEL` as `base_role` for a tone mark stacked on an
-        above vowel so that stack gets its own independent base offset.
+        `base_role`, when given and present in `base_offsets`, overrides `role` for the
+        base tier — the composer passes `ROLE_TONE_MARK_ON_ABOVE_VOWEL` for a tone mark
+        stacked on an above vowel so that stack gets its own independent base offset. The
+        tier-precedence formula is documented on `ConsonantSettings`.
         """
         specific = self._per_glyph_offset(role, mark_uni=mark_uni, combo_key=combo_key)
         base_key = base_role if base_role is not None and base_role in self.base_offsets else role
@@ -263,9 +249,8 @@ def load_placement_settings(path: str | Path) -> PlacementSettings:
 def save_placement_settings(settings: PlacementSettings, path: str | Path) -> None:
     """Write `settings` to `path` as JSON, omitting empty/no-op entries.
 
-    Consonants, mark offsets, combo offsets, and substitution codepoints are keyed by
-    their `U+XXXX` notation. The file is written as UTF-8 with `ensure_ascii=False,
-    indent=4`.
+    Consonants, mark offsets, combo offsets, and substitution codepoints are emitted as
+    their `U+XXXX` notation.
     """
     payload = settings_to_dict(settings)
     p = Path(path)

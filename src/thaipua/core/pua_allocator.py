@@ -1,10 +1,8 @@
 """PUA codepoint allocator for the Thai-to-PUA mapping file.
 
-Allocates a PUA codepoint for every consonant plus vowel/tone suffix combination.
-`extend_pua_mapping` iterates the consonants in `THAI_CONSONANTS` order, and for each
-consonant walks `THAI_SUFFIXES` in order, so the suffix variants of one consonant
-occupy consecutive PUA codepoints. Already-mapped keys are skipped individually, and
-the newly allocated entries are merged into the on-disk JSON mapping.
+Allocates a PUA codepoint for every consonant plus vowel/tone suffix combination, with
+one consonant's suffix variants occupying consecutive PUA codepoints so the mapping
+stays deterministic across runs.
 """
 
 from __future__ import annotations

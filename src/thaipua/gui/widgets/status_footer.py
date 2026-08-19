@@ -1,8 +1,4 @@
-"""Footer status bar showing the loaded font filename and dirty indicator.
-
-`StatusBar` wraps `QStatusBar` and exposes a single pair of setters the main window
-calls when fonts load/save and edits mutate the document state.
-"""
+"""Footer status bar showing the loaded font filename and dirty indicator."""
 
 from __future__ import annotations
 

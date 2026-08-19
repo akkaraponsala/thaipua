@@ -1,10 +1,4 @@
-"""Modal dialogs for the toolbar's PUA/Find-Substitution/Settings actions.
-
-`FindSubstitutionDialog` shows the per-category GSUB catalog returned by
-`find_glyph_substitutions` in a filterable tree; `SettingsDialog` exposes the
-Light/Dark/System theme switcher that applies the chosen `ThemeMode` live (via an
-`on_theme_changed` callback supplied by the main window).
-"""
+"""Modal dialogs for the toolbar's Find-Substitution and Settings actions."""
 
 from __future__ import annotations
 

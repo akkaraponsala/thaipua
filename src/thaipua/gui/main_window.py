@@ -1,10 +1,7 @@
 """Top-level window wiring the three-column layout to `AppState`/`FontService`.
 
 `MainWindow` is the single mutator of `AppState`: every pane's signal lands here,
-mutates state, and re-renders whichever other pane cares. PUA-spec lookups are O(1) via
-an `int -> CompositeSpec` index rebuilt on each PUA-map reload, and the middle pane's
-`QPainterPath` is replaced on every offset edit so previews keep up with live slider
-drags.
+mutates state, and re-renders whichever other pane cares.
 """
 
 from __future__ import annotations
@@ -550,7 +547,6 @@ class MainWindow(QMainWindow):
             self._grid_pane.set_selected(self._state.active_pua_code)
 
     def _refresh_footer(self) -> None:
-        """Push the current font-name/dirty state into the footer."""
         self._status_bar.set_font(self._state.font_path)
         self._status_bar.set_dirty(self._state.dirty)
 

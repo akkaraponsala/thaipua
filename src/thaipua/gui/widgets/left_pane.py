@@ -2,9 +2,8 @@
 
 `GlyphGridPane` renders two contextual pages: the Consonant Page (42 Thai consonants,
 paginated 36 per page) and the PUA Page, the variants of a selected consonant (also 36
-per page). Each 6x6 grid is a `QGridLayout` of `_GlyphCell` frames; the pane
-differentiates click semantics via its current mode so the emitted signal matches the
-state machine (`consonant_clicked` vs `pua_clicked`).
+per page). Each 6x6 grid is a `QGridLayout` of `_GlyphCell` frames; click semantics
+follow the current mode (see `_on_cell_clicked`).
 """
 
 from __future__ import annotations
