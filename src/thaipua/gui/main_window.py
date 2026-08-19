@@ -358,8 +358,16 @@ class MainWindow(QMainWindow):
         both `codepoint` and `cons_uni`, with `present_roles` from the PUA spec (or
         empty when only the consonant page is active); mark roles use the spec's mark
         codepoint, `spec.cons_uni`, and the spec's present roles (requiring a selected
-        PUA glyph). `conditions` is canonicalised by dropping `tone_mark` within a vowel
-        family, so the latest write across tone variants of one family wins.
+        PUA glyph). `conditions` is canonicalised per codepoint category
+        (`context_canonicaliser`): a tone-mark codepoint merges the below-vowel family
+        with the tone-only family; a consonant codepoint scopes the family by its
+        protrusion — an up-protruding consonant (e.g. ฬ) merges every above-stack
+        context (`above_vowel` and/or `tone_mark`, with or without a below vowel) into
+        one family, while a down-protruding consonant (e.g. ญ ฐ ฎ ฏ) fires only for
+        below-vowel-present clusters — so a consonant substitution defined on an
+        `above_vowel` cluster of an up-protruding consonant also applies to its tone
+        clusters, and one defined for a down-protruding consonant on a below-vowel
+        cluster does not leak into clusters without a below vowel.
         """
         spec = self._active_spec()
         codepoint: int | None

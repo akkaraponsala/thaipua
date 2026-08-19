@@ -532,8 +532,11 @@ class ControlsPane(QWidget):
 
         `cons_uni` selects the consonant; `codepoint` is the substituted codepoint. The
         `present_roles` set gates contextual matching (empty matches only always-on
-        rules). Canonicalisation drops `tone_mark` within a vowel family, so a rule for
-        `consonant + below_vowel` surfaces for every tone variant of that family.
+        rules). Canonicalisation is per-codepoint category (`context_canonicaliser`):
+        a tone-mark rule's below-vowel family surfaces for the tone-only cluster; a
+        consonant rule surfaces for every cluster the consonant's protrusion triggers —
+        an up-protruding consonant (e.g. ฬ) for every above-stack context, a down-
+        protruding consonant (e.g. ญ ฐ ฎ ฏ) for every below-vowel-present context.
         """
         combo = self._sub_combos[role]
         combo.blockSignals(True)

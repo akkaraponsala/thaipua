@@ -35,8 +35,8 @@ from thaipua.core.fonttools.settings import (
     PlacementSettings,
     SnapConfig,
     SubstitutionRule,
-    canonicalise_substitution_context,
     combo_key_from_codepoints,
+    context_canonicaliser,
     default_placement_settings,
 )
 from thaipua.core.fonttools.specs import THAI_CONSONANTS, CompositeSpec, iter_composite_specs
@@ -306,11 +306,16 @@ def apply_glyph_substitution(
     `consonants[cons_uni].glyph_substitutions[codepoint]` in place (seeding on first
     install, clearing the codepoint list when it empties).
 
-    `conditions` is canonicalised before storage: `tone_mark` is dropped within a vowel
-    family, so writes from `below_vowel + tone_mark` and `below_vowel` address the same
-    slot and the latest write wins.
+    `conditions` is canonicalised before storage by `context_canonicaliser(codepoint)`, so
+    writes from contexts sharing one substitution slot address it and the latest write
+    wins: a tone-mark codepoint collapses the below-vowel family into the tone-only
+    family; a consonant codepoint scopes the family by its protrusion — an up-
+    protruding consonant (e.g. ฬ) collapses every above-stack context into
+    `{above_vowel, tone_mark}`, a down-protruding consonant (e.g. ญ ฐ ฎ ฏ) collapses
+    every below-vowel-present context into `{below_vowel}`; vowel codepoints drop
+    `tone_mark` within any vowel family.
     """
-    conditions = canonicalise_substitution_context(conditions)
+    conditions = context_canonicaliser(codepoint)(conditions)
     cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
     rules = cs.glyph_substitutions.get(codepoint, [])
     for i, existing in enumerate(list(rules)):

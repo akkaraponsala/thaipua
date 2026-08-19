@@ -15,7 +15,9 @@ codepoint. Each consonant entry carries:
 - `snap_configs` — per-pair `{enabled, gap}` configs (or a bare boolean) for the three
   bounding-box snaps.
 - `glyph_substitutions` — per-codepoint contextual glyph rules (see `SubstitutionRule`
-  and `canonicalise_substitution_context` for the canonicalisation and match semantics).
+  and `context_canonicaliser` — with `canonicalise_substitution_context`,
+  `canonicalise_tone_mark_context`, and the protrusion-scoped
+  `canonicalise_consonant_context` — for the canonicalisation and match semantics).
 
 Every codepoint key uses the canonical `U+XXXX` notation (`U+` followed by 1-6
 uppercase hex digits); direct Thai character keys are rejected.
@@ -32,10 +34,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, overload
+
+from thaipua.core.fonttools.specs import CONSONANT_PROTRUSION, THAI_CONSONANTS, TONE_MARKS
 
 logger = logging.getLogger(__name__)
 SETTINGS_VERSION: int = 1
@@ -103,12 +107,17 @@ class SubstitutionRule:
     """A single contextual glyph substitution.
 
     A rule fires for a cluster when every role in its `conditions` is present in the
-    cluster's mark-role set (AND semantics), after both sides are canonicalised by
-    `canonicalise_substitution_context` — within a vowel family (`above_vowel` or
-    `below_vowel` present) the `tone_mark` role is dropped, so `{below_vowel,
-    tone_mark}` and `{below_vowel}` address the same slot. An empty `conditions` fires
-    in any context (the always-on default). Among matching rules the most specific
-    (longest canonicalised `conditions`) wins, ties broken by list order.
+    cluster's mark-role set (AND semantics), after both sides are canonicalised by the
+    codepoint's category canonicaliser (see `context_canonicaliser`): a tone-mark
+    codepoint merges the below-vowel family into the tone-only family; a consonant
+    self-substitution scopes the family by the consonant's protrusion — an up-
+    protruding consonant (e.g. ฬ) merges every above-stack context into
+    `{above_vowel, tone_mark}`, a down-protruding consonant (e.g. ญ ฐ ฎ ฏ) collapses
+    every below-vowel-present context into `{below_vowel}`, and a consonant without a
+    listed protrusion drops `tone_mark` within any vowel family; vowel codepoints also
+    drop `tone_mark` within any vowel family. An empty `conditions` fires in any
+    context (the always-on default). Among matching rules the most specific (longest
+    canonicalised `conditions`) wins, ties broken by list order.
     """
 
     replacement: str
@@ -176,20 +185,26 @@ class ConsonantSettings:
         """Return the best-matching rule's replacement glyph for `codepoint`.
 
         Both `present_roles` and each candidate rule's `conditions` are canonicalised by
-        `canonicalise_substitution_context` (within a vowel family `tone_mark` is
-        dropped from both). A rule fires when its canonicalised `conditions` is a subset
-        of the canonicalised `present_roles`; among matching rules the longest
-        `conditions` (then first-seen in list order) wins. Returns `None` when no rule
-        matches.
+        `context_canonicaliser(codepoint)`, so matching families depend on the
+        substituted codepoint's category: a tone-mark rule's below-vowel family
+        addresses the tone-only slot (`canonicalise_tone_mark_context`); a consonant
+        rule fires for every cluster the consonant's protrusion triggers — an up-
+        protruding consonant (e.g. ฬ) for every above-stack context, a down-protruding
+        consonant (e.g. ญ ฐ ฎ ฏ) for every below-vowel-present context
+        (`canonicalise_consonant_context`). A rule fires when its canonicalised
+        `conditions` is a subset of the canonicalised `present_roles`; among matching
+        rules the longest `conditions` (then first-seen in list order) wins. Returns
+        `None` when no rule matches.
         """
         rules = self.glyph_substitutions.get(codepoint)
         if not rules:
             return None
-        ctx = canonicalise_substitution_context(present_roles)
+        canonicalise = context_canonicaliser(codepoint)
+        ctx = canonicalise(present_roles)
         best = None
         best_len = -1
         for rule in rules:
-            cond = canonicalise_substitution_context(rule.conditions)
+            cond = canonicalise(rule.conditions)
             if cond.issubset(ctx):
                 cond_len = len(cond)
                 if cond_len > best_len:
@@ -453,13 +468,13 @@ def _build_glyph_substitutions(raw: Any) -> dict[int, list[SubstitutionRule]]:
         if cp is None:
             logger.warning("Skipping glyph_substitutions key %r: not a valid U+XXXX codepoint", cp_str)
             continue
-        rules = _build_replacement_rules(value, cp_str)
+        rules = _build_replacement_rules(value, cp_str, codepoint=cp)
         if rules:
             out[cp] = rules
     return out
 
 
-def _build_replacement_rules(value: Any, cp_str: str) -> list[SubstitutionRule]:
+def _build_replacement_rules(value: Any, cp_str: str, *, codepoint: int) -> list[SubstitutionRule]:
     """Build a rule list for one codepoint from a rule object or rule list.
 
     Accepted shapes:
@@ -470,7 +485,7 @@ def _build_replacement_rules(value: Any, cp_str: str) -> list[SubstitutionRule]:
     (last-seen wins).
     """
     if isinstance(value, dict):
-        rule = _build_replacement_rule(value, cp_str)
+        rule = _build_replacement_rule(value, cp_str, codepoint=codepoint)
         return [rule] if rule is not None else []
     if isinstance(value, list):
         rules: dict[frozenset[str], SubstitutionRule] = {}
@@ -478,7 +493,7 @@ def _build_replacement_rules(value: Any, cp_str: str) -> list[SubstitutionRule]:
             if not isinstance(item, dict):
                 logger.warning("glyph_substitutions[%s] list item is not an object; skipping", cp_str)
                 continue
-            rule = _build_replacement_rule(item, cp_str)
+            rule = _build_replacement_rule(item, cp_str, codepoint=codepoint)
             if rule is not None:
                 rules[rule.conditions] = rule
         return list(rules.values())
@@ -501,37 +516,98 @@ def canonicalise_substitution_context(roles: frozenset[str]) -> frozenset[str]:
     return roles
 
 
-def _build_replacement_rule(item: dict[str, Any], cp_str: str) -> SubstitutionRule | None:
+def canonicalise_tone_mark_context(roles: frozenset[str]) -> frozenset[str]:
+    """Canonicalise a substitution context for a tone-mark codepoint.
+
+    Beyond `canonicalise_substitution_context`, the below-vowel family and the
+    tone-only family address the same slot: a below vowel (SARA U / SARA UU) hangs
+    below the base line and never moves the tone mark, so a tone-mark rule authored at
+    `consonant + below_vowel` also fires for `consonant` alone and vice versa. An
+    `above_vowel` family stays distinct — a tone mark stacked on an above vowel changes
+    position, so above-vowel contexts never match a below/plain rule. An empty context
+    (the always-on default) is returned unchanged.
+    """
+    roles = canonicalise_substitution_context(roles)
+    if not roles or SUB_ABOVE_VOWEL in roles:
+        return roles
+    return (roles - {SUB_BELOW_VOWEL}) | {SUB_TONE_MARK}
+
+
+def canonicalise_consonant_context(roles: frozenset[str], *, protrusion: str | None) -> frozenset[str]:
+    """Canonicalise a substitution context for a consonant self-substitution.
+
+    A consonant substitution swaps the consonant's own glyph to clear its protruding
+    part, so the trigger depends on which side it protrudes:
+
+    - `protrusion == "up"` (tail/loop above the base line, e.g. ฬ): every cluster with
+      a mark stacked above — an `above_vowel` or a `tone_mark`, with or without a below
+      vowel — collapses to `{above_vowel, tone_mark}`; a below-vowel-only cluster stays
+      its own family (nothing is stacked above).
+    - `protrusion == "down"` (base or tail below the base line, e.g. ญ ฐ ฎ ฏ): only a
+      below-vowel-present cluster fires — it collapses to `{below_vowel}` regardless of
+      the stack above; clusters without a below vowel stay their own families.
+    - `None` (no listed protrusion): the generic `canonicalise_substitution_context`.
+
+    The empty context (the always-on default) is returned unchanged in every case.
+    """
+    if protrusion == "up":
+        if SUB_ABOVE_VOWEL in roles or SUB_TONE_MARK in roles:
+            return frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})
+        return roles
+    if protrusion == "down":
+        if SUB_BELOW_VOWEL in roles:
+            return frozenset({SUB_BELOW_VOWEL})
+        return roles
+    return canonicalise_substitution_context(roles)
+
+
+def context_canonicaliser(codepoint: int) -> Callable[[frozenset[str]], frozenset[str]]:
+    """Return the substitution-context canonicaliser for `codepoint`'s category.
+
+    Tone-mark codepoints merge the below-vowel family into the tone-only family
+    (`canonicalise_tone_mark_context`); consonant self-substitutions scope the family
+    by the consonant's protrusion (`CONSONANT_PROTRUSION` — see
+    `canonicalise_consonant_context`); vowel codepoints use the generic
+    `canonicalise_substitution_context`.
+    """
+    if codepoint in TONE_MARKS:
+        return canonicalise_tone_mark_context
+    if codepoint in THAI_CONSONANTS:
+        protrusion = CONSONANT_PROTRUSION.get(codepoint)
+        return lambda roles: canonicalise_consonant_context(roles, protrusion=protrusion)
+    return canonicalise_substitution_context
+
+
+def _build_replacement_rule(item: dict[str, Any], cp_str: str, *, codepoint: int) -> SubstitutionRule | None:
     """Build one `SubstitutionRule` from a rule object.
 
     Reads the replacement from `replacement`; reads the trigger set from `conditions`. A
     missing or empty replacement skips the rule. The trigger set is canonicalised by
-    `canonicalise_substitution_context` so rules authored at `tone_mark + vowel`
-    collapse to the vowel-only family, matching the in-memory form produced by
-    `state.apply_glyph_substitution`.
+    `context_canonicaliser(codepoint)`, matching the in-memory form produced by
+    `state.apply_glyph_substitution` and the match semantics of
+    `ConsonantSettings.substitution_for`.
     """
     replacement = _coerce_str(item.get("replacement"))
     if not replacement:
         logger.warning("glyph_substitutions[%s] rule has no non-empty `replacement`; skipping", cp_str)
         return None
     raw_conditions = item.get("conditions")
-    conditions = set()
+    condition_roles: set[str] = set()
     if raw_conditions is not None:
         if not isinstance(raw_conditions, list):
             logger.warning("glyph_substitutions[%s] rule has non-list `conditions`; using empty (always)", cp_str)
         else:
             for r in raw_conditions:
                 if isinstance(r, str) and r in SUB_CONDITIONS_ROLES:
-                    conditions.add(r)
+                    condition_roles.add(r)
                 elif isinstance(r, str):
                     logger.warning(
                         "glyph_substitutions[%s] rule has unknown `conditions` role %r; skipping role",
                         cp_str,
                         r,
                     )
-    return SubstitutionRule(
-        replacement=replacement, conditions=canonicalise_substitution_context(frozenset(conditions))
-    )
+    canonical = context_canonicaliser(codepoint)
+    return SubstitutionRule(replacement=replacement, conditions=canonical(frozenset(condition_roles)))
 
 
 def _build_snap_configs(raw: Any) -> dict[str, SnapConfig]:
@@ -666,24 +742,29 @@ def _glyph_substitutions_to_dict(subs: dict[int, list[SubstitutionRule]]) -> dic
     `{"replacement": ..., "conditions": [...]}` — the input form accepted by
     `_build_glyph_substitutions`. The `conditions` list is sorted lexicographically for
     deterministic output; an always-on rule (empty `conditions`) omits the key.
+    `conditions` is re-canonicalised per codepoint category (`context_canonicaliser`)
+    before serialization, so the payload is always in canonical form regardless of how
+    the in-memory rule was constructed.
     """
     out: dict[str, list[dict[str, Any]]] = {}
     for cp in sorted(subs):
         rules = subs[cp]
         if not rules:
             continue
-        out[_format_codepoint(cp)] = [_replacement_rule_to_dict(r) for r in rules]
+        canonical = context_canonicaliser(cp)
+        out[_format_codepoint(cp)] = [_replacement_rule_to_dict(rule, canonical(rule.conditions)) for rule in rules]
     return out
 
 
-def _replacement_rule_to_dict(rule: SubstitutionRule) -> dict[str, Any]:
+def _replacement_rule_to_dict(rule: SubstitutionRule, conditions: frozenset[str]) -> dict[str, Any]:
     """Serialize a `SubstitutionRule` to `{"replacement": ..., "conditions": [...]}`.
 
-    Omits `conditions` when empty to keep always-on rules compact.
+    Omits `conditions` when empty to keep always-on rules compact. `conditions` is the
+    canonicalised trigger set supplied by `_glyph_substitutions_to_dict`.
     """
     item: dict[str, Any] = {"replacement": rule.replacement}
-    if rule.conditions:
-        item["conditions"] = sorted(rule.conditions)
+    if conditions:
+        item["conditions"] = sorted(conditions)
     return item
 
 
