@@ -39,12 +39,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, overload
 
-from thaipua.core.fonttools.specs import CONSONANT_PROTRUSION, THAI_CONSONANTS, TONE_MARKS
+from thaipua.core.fonttools.specs import ABOVE_VOWELS, BELOW_VOWELS, CONSONANT_PROTRUSION, THAI_CONSONANTS, TONE_MARKS
 
 logger = logging.getLogger(__name__)
 SETTINGS_VERSION: int = 1
 _CODEPOINT_RE: re.Pattern[str] = re.compile("^[Uu]\\+([0-9A-Fa-f]{1,6})$")
 _COMBO_CODEPOINT_RE: re.Pattern[str] = re.compile("[Uu]\\+([0-9A-Fa-f]{1,6})")
+_COMBO_KEY_RE: re.Pattern[str] = re.compile("^(?:[Uu]\\+[0-9A-Fa-f]{1,6})(?:\\+[Uu]\\+[0-9A-Fa-f]{1,6})*$")
 _MAX_CODEPOINT: int = 1114111
 ROLE_TONE_MARK: str = "tone_mark"
 ROLE_ABOVE_VOWEL: str = "above_vowel"
@@ -58,6 +59,11 @@ MARK_GROUP_TO_ROLE: dict[str, str] = {
     "below_vowels": ROLE_BELOW_VOWEL,
 }
 ROLE_TO_MARK_GROUP: dict[str, str] = {v: k for k, v in MARK_GROUP_TO_ROLE.items()}
+ROLE_TO_MARK_CATEGORY: dict[str, set[int]] = {
+    ROLE_TONE_MARK: TONE_MARKS,
+    ROLE_ABOVE_VOWEL: ABOVE_VOWELS,
+    ROLE_BELOW_VOWEL: BELOW_VOWELS,
+}
 SUB_CONSONANT: str = "consonant"
 SUB_TONE_MARK: str = "tone_mark"
 SUB_ABOVE_VOWEL: str = "above_vowel"
@@ -76,6 +82,9 @@ class Offset:
 
     x: int = 0
     y: int = 0
+
+    def __add__(self, other: Offset) -> Offset:
+        return Offset(self.x + other.x, self.y + other.y)
 
 
 _ZERO_OFFSET: Offset = Offset()
@@ -109,14 +118,11 @@ class SubstitutionRule:
     A rule fires for a cluster when every role in its `conditions` is present in the
     cluster's mark-role set (AND semantics), after both sides are canonicalised by the
     codepoint's category canonicaliser (see `context_canonicaliser`): a tone-mark
-    codepoint merges the below-vowel family into the tone-only family; a consonant
-    self-substitution scopes the family by the consonant's protrusion — an up-
-    protruding consonant (e.g. ฬ) merges every above-stack context into
-    `{above_vowel, tone_mark}`, a down-protruding consonant (e.g. ญ ฐ ฎ ฏ) collapses
-    every below-vowel-present context into `{below_vowel}`, and a consonant without a
-    listed protrusion drops `tone_mark` within any vowel family; vowel codepoints also
-    drop `tone_mark` within any vowel family. An empty `conditions` fires in any
-    context (the always-on default). Among matching rules the most specific (longest
+    codepoint merges the below-vowel family into the tone-only family; an up-protruding
+    consonant self-substitution (e.g. ฬ) merges every above-stack context into
+    `{above_vowel, tone_mark}`; every other consonant and vowel codepoint drops
+    `tone_mark` within any vowel family. An empty `conditions` fires in any context
+    (the always-on default). Among matching rules the most specific (longest
     canonicalised `conditions`) wins, ties broken by list order.
     """
 
@@ -153,8 +159,7 @@ class ConsonantSettings:
         """
         specific = self._per_glyph_offset(role, mark_uni=mark_uni, combo_key=combo_key)
         base_key = base_role if base_role is not None and base_role in self.base_offsets else role
-        base = self.base_offsets.get(base_key, Offset())
-        return Offset(specific.x + base.x, specific.y + base.y)
+        return specific + self.base_offsets.get(base_key, Offset())
 
     def _per_glyph_offset(self, role: str, *, mark_uni: int | None, combo_key: str | None) -> Offset:
         """Return the per-glyph tier offset for `role`, or `Offset(0, 0)` when unset.
@@ -178,7 +183,6 @@ class ConsonantSettings:
         return Offset()
 
     def snap_for(self, snap_name: str) -> SnapConfig | None:
-        """Return the snap config for `snap_name`, or `None` when none is set."""
         return self.snap_configs.get(snap_name)
 
     def substitution_for(self, codepoint: int, *, present_roles: frozenset[str]) -> str | None:
@@ -187,14 +191,13 @@ class ConsonantSettings:
         Both `present_roles` and each candidate rule's `conditions` are canonicalised by
         `context_canonicaliser(codepoint)`, so matching families depend on the
         substituted codepoint's category: a tone-mark rule's below-vowel family
-        addresses the tone-only slot (`canonicalise_tone_mark_context`); a consonant
-        rule fires for every cluster the consonant's protrusion triggers — an up-
-        protruding consonant (e.g. ฬ) for every above-stack context, a down-protruding
-        consonant (e.g. ญ ฐ ฎ ฏ) for every below-vowel-present context
-        (`canonicalise_consonant_context`). A rule fires when its canonicalised
-        `conditions` is a subset of the canonicalised `present_roles`; among matching
-        rules the longest `conditions` (then first-seen in list order) wins. Returns
-        `None` when no rule matches.
+        addresses the tone-only slot (`canonicalise_tone_mark_context`); an up-
+        protruding consonant self-substitution (e.g. ฬ) fires for every above-stack
+        context (`canonicalise_consonant_context`); every other consonant and vowel
+        codepoint applies the generic `canonicalise_substitution_context`. A rule fires
+        when its canonicalised `conditions` is a subset of the canonicalised
+        `present_roles`; among matching rules the longest `conditions` (then first-seen
+        in list order) wins. Returns `None` when no rule matches.
         """
         rules = self.glyph_substitutions.get(codepoint)
         if not rules:
@@ -225,16 +228,10 @@ class PlacementSettings:
     consonants: dict[int, ConsonantSettings] = field(default_factory=dict)
 
     def for_consonant(self, cons_uni: int) -> ConsonantSettings:
-        """Return the settings for `cons_uni`, or an all-empty instance when unset."""
         return self.consonants.get(cons_uni, ConsonantSettings())
 
 
 def default_placement_settings() -> PlacementSettings:
-    """Build placement settings with no overrides.
-
-    Every consonant uses the composer's default advance-width placement with no
-    additional delta, snap config, or substitution overrides.
-    """
     return PlacementSettings(version=SETTINGS_VERSION, metadata=Metadata(), consonants={})
 
 
@@ -298,12 +295,14 @@ def settings_to_dict(settings: PlacementSettings) -> dict[str, Any]:
 def _build_from_dict(data: dict[str, Any]) -> PlacementSettings:
     """Build a `PlacementSettings` instance from a parsed JSON dict.
 
-    Substitutions are scoped per consonant; any top-level `glyph_substitutions` key is
-    ignored (see `ConsonantSettings.glyph_substitutions`).
+    A `version` other than `SETTINGS_VERSION` means the file predates or postdates the
+    current schema, so parsing it would risk silently misreading a changed shape;
+    `default_placement_settings()` is returned in its place.
     """
     raw_version = _coerce_int(data.get("version"), SETTINGS_VERSION)
     if raw_version != SETTINGS_VERSION:
-        logger.warning("Unsupported settings version %d; treating as v%d", raw_version, SETTINGS_VERSION)
+        logger.warning("Unsupported settings version %d; using defaults", raw_version)
+        return default_placement_settings()
     return PlacementSettings(
         version=SETTINGS_VERSION,
         metadata=_build_metadata(data.get("metadata")),
@@ -312,23 +311,33 @@ def _build_from_dict(data: dict[str, Any]) -> PlacementSettings:
 
 
 def _build_metadata(raw: Any) -> Metadata:
-    """Build a `Metadata` instance from a parsed `metadata` value."""
+    """Build a `Metadata` instance from a parsed `metadata` value.
+
+    Empty `font_name` / `family_name` strings are treated as unset (`None`) so they are
+    not serialized back as blank fields; a non-positive `units_per_em` is ignored with
+    a warning.
+    """
     if not isinstance(raw, dict):
         if raw is not None:
             logger.warning("metadata is not an object; ignoring metadata")
         return Metadata()
+    units_per_em = _coerce_int(raw.get("units_per_em"), None)
+    if units_per_em is not None and units_per_em <= 0:
+        logger.warning("metadata.units_per_em must be positive; ignoring")
+        units_per_em = None
     return Metadata(
-        font_name=_coerce_str(raw.get("font_name")),
-        family_name=_coerce_str(raw.get("family_name")),
-        units_per_em=_coerce_int(raw.get("units_per_em"), None),
+        font_name=_coerce_str(raw.get("font_name")) or None,
+        family_name=_coerce_str(raw.get("family_name")) or None,
+        units_per_em=units_per_em,
     )
 
 
 def _build_consonants(raw: Any) -> dict[int, ConsonantSettings]:
     """Parse the `consonants` map into a codepoint-keyed settings map.
 
-    Keys must be `U+XXXX` codepoint notations (1-6 hex digits). Invalid keys or non-
-    object entries are logged and skipped.
+    Keys must be `U+XXXX` codepoint notations (1-6 hex digits) of an actual Thai
+    consonant. Invalid keys, non-consonant codepoints, or non-object entries are logged
+    and skipped.
     """
     if not isinstance(raw, dict):
         if raw is not None:
@@ -340,6 +349,9 @@ def _build_consonants(raw: Any) -> dict[int, ConsonantSettings]:
         if cp is None:
             logger.warning("Skipping consonant key %r: not a valid U+XXXX codepoint", key)
             continue
+        if cp not in THAI_CONSONANTS:
+            logger.warning("consonants[%s] is not a Thai consonant; skipping", key)
+            continue
         if not isinstance(value, dict):
             logger.warning("consonants[%s] is not an object; skipping", key)
             continue
@@ -348,7 +360,6 @@ def _build_consonants(raw: Any) -> dict[int, ConsonantSettings]:
 
 
 def _build_consonant_settings(raw: dict[str, Any]) -> ConsonantSettings:
-    """Build a `ConsonantSettings` from a parsed per-consonant object."""
     return ConsonantSettings(
         base_offsets=_build_base_offsets(raw.get("base_offsets")),
         mark_offsets=_build_mark_offsets(raw.get("mark_offsets")),
@@ -359,7 +370,6 @@ def _build_consonant_settings(raw: dict[str, Any]) -> ConsonantSettings:
 
 
 def _build_base_offsets(raw: Any) -> dict[str, Offset]:
-    """Parse the `base_offsets` object into a role-keyed offset map."""
     out: dict[str, Offset] = {}
     if not isinstance(raw, dict):
         if raw is not None:
@@ -381,7 +391,9 @@ def _build_mark_offsets(raw: Any) -> dict[str, dict[int, Offset]]:
     """Parse the `mark_offsets` object into a role -> codepoint -> offset map.
 
     Mark keys must be `U+XXXX` codepoint notations under each plural group (`tone_marks`
-    / `above_vowels` / `below_vowels`).
+    / `above_vowels` / `below_vowels`) and must belong to that group's category
+    (`TONE_MARKS` / `ABOVE_VOWELS` / `BELOW_VOWELS`) — a tone mark under `above_vowels`
+    is a typo and is skipped.
     """
     out: dict[str, dict[int, Offset]] = {}
     if not isinstance(raw, dict):
@@ -396,11 +408,15 @@ def _build_mark_offsets(raw: Any) -> dict[str, dict[int, Offset]]:
         if not isinstance(sub_raw, dict):
             logger.warning("mark_offsets[%s] is not an object; skipping", group)
             continue
+        category = ROLE_TO_MARK_CATEGORY[role]
         role_map = {}
         for mark_cp_str, value in sub_raw.items():
             cp = _parse_codepoint(mark_cp_str)
             if cp is None:
                 logger.warning("Skipping mark_offsets[%s] key %r: not a valid U+XXXX codepoint", group, mark_cp_str)
+                continue
+            if cp not in category:
+                logger.warning("Skipping mark_offsets[%s] key %r: not in the group's category", group, mark_cp_str)
                 continue
             off = _parse_offset(value)
             if off is None:
@@ -428,7 +444,9 @@ def _build_combo_offsets(raw: Any) -> dict[str, dict[str, Offset]]:
     for combo_key, value in raw.items():
         canonical = _parse_combo_key(combo_key)
         if canonical is None:
-            logger.warning("Skipping combo_offsets key %r: not a U+XXXX(+U+XXXX...) key", combo_key)
+            logger.warning(
+                "Skipping combo_offsets key %r: not a U+XXXX(+U+XXXX...) key or repeats a codepoint", combo_key
+            )
             continue
         if not isinstance(value, dict):
             logger.warning("combo_offsets[%r] is not an object; skipping", combo_key)
@@ -482,7 +500,7 @@ def _build_replacement_rules(value: Any, cp_str: str, *, codepoint: int) -> list
     - a list of `{"replacement": ..., "conditions": [...]}` objects — built rule-by-rule.
 
     A later rule whose canonicalised `conditions` equal an earlier rule's replaces it
-    (last-seen wins).
+    (last-seen wins, with a warning).
     """
     if isinstance(value, dict):
         rule = _build_replacement_rule(value, cp_str, codepoint=codepoint)
@@ -495,6 +513,12 @@ def _build_replacement_rules(value: Any, cp_str: str, *, codepoint: int) -> list
                 continue
             rule = _build_replacement_rule(item, cp_str, codepoint=codepoint)
             if rule is not None:
+                if rule.conditions in rules:
+                    logger.warning(
+                        "glyph_substitutions[%s] rule for conditions %r duplicates an earlier rule; later rule wins",
+                        cp_str,
+                        sorted(rule.conditions),
+                    )
                 rules[rule.conditions] = rule
         return list(rules.values())
     logger.warning("glyph_substitutions[%s] is not an object or a list of objects; skipping", cp_str)
@@ -543,20 +567,16 @@ def canonicalise_consonant_context(roles: frozenset[str], *, protrusion: str | N
       a mark stacked above — an `above_vowel` or a `tone_mark`, with or without a below
       vowel — collapses to `{above_vowel, tone_mark}`; a below-vowel-only cluster stays
       its own family (nothing is stacked above).
-    - `protrusion == "down"` (base or tail below the base line, e.g. ญ ฐ ฎ ฏ): only a
-      below-vowel-present cluster fires — it collapses to `{below_vowel}` regardless of
-      the stack above; clusters without a below vowel stay their own families.
-    - `None` (no listed protrusion): the generic `canonicalise_substitution_context`.
+    - Any other consonant (`protrusion` absent): the generic
+      `canonicalise_substitution_context`, which drops `tone_mark` within a vowel
+      family so a below-vowel rule does not leak into no-below-vowel clusters while
+      keeping a below-plus-above cluster distinct from below-only.
 
     The empty context (the always-on default) is returned unchanged in every case.
     """
     if protrusion == "up":
         if SUB_ABOVE_VOWEL in roles or SUB_TONE_MARK in roles:
             return frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})
-        return roles
-    if protrusion == "down":
-        if SUB_BELOW_VOWEL in roles:
-            return frozenset({SUB_BELOW_VOWEL})
         return roles
     return canonicalise_substitution_context(roles)
 
@@ -611,7 +631,6 @@ def _build_replacement_rule(item: dict[str, Any], cp_str: str, *, codepoint: int
 
 
 def _build_snap_configs(raw: Any) -> dict[str, SnapConfig]:
-    """Parse the `snap_configs` object into a snap-name -> config map."""
     out: dict[str, SnapConfig] = {}
     if not isinstance(raw, dict):
         if raw is not None:
@@ -630,14 +649,12 @@ def _build_snap_configs(raw: Any) -> dict[str, SnapConfig]:
 
 
 def _parse_offset(raw: Any) -> Offset | None:
-    """Coerce `raw` to an `Offset`, returning `None` when not a `{x, y}` object."""
     if not isinstance(raw, dict):
         return None
     return Offset(x=_coerce_int(raw.get("x"), 0), y=_coerce_int(raw.get("y"), 0))
 
 
 def _parse_snap(raw: Any) -> SnapConfig | None:
-    """Coerce `raw` to a `SnapConfig`, supporting both bare booleans and `{enabled, gap}`."""
     if isinstance(raw, bool):
         return SnapConfig(enabled=raw)
     if not isinstance(raw, dict):
@@ -649,7 +666,6 @@ def _parse_snap(raw: Any) -> SnapConfig | None:
 
 
 def _metadata_to_dict(md: Metadata) -> dict[str, Any]:
-    """Serialize `Metadata` to a plain dict, omitting unset fields."""
     out: dict[str, Any] = {}
     if md.font_name is not None:
         out["font_name"] = md.font_name
@@ -686,7 +702,6 @@ def _consonant_settings_to_dict(cset: ConsonantSettings) -> dict[str, Any]:
 
 
 def _base_offsets_to_dict(base_offsets: dict[str, Offset]) -> dict[str, dict[str, int]]:
-    """Serialize the base-offsets map, omitting `(0, 0)` entries."""
     out: dict[str, dict[str, int]] = {}
     for role in BASE_OFFSET_ROLES:
         off = base_offsets.get(role, Offset())
@@ -697,7 +712,6 @@ def _base_offsets_to_dict(base_offsets: dict[str, Offset]) -> dict[str, dict[str
 
 
 def _mark_offsets_to_dict(mark_offsets: dict[str, dict[int, Offset]]) -> dict[str, dict[str, dict[str, int]]]:
-    """Serialize the mark-offsets map as plural-group -> U+XXXX -> `{x, y}`."""
     out: dict[str, dict[str, dict[str, int]]] = {}
     for role in ROLES:
         group = mark_offsets.get(role)
@@ -769,7 +783,6 @@ def _replacement_rule_to_dict(rule: SubstitutionRule, conditions: frozenset[str]
 
 
 def _snap_configs_to_dict(snap_configs: dict[str, SnapConfig]) -> dict[str, Any]:
-    """Serialize the snap-configs map, emitting bare booleans when `gap` is `0`."""
     out: dict[str, Any] = {}
     for name in SNAPS:
         snap = snap_configs.get(name)
@@ -783,7 +796,6 @@ def _snap_configs_to_dict(snap_configs: dict[str, SnapConfig]) -> dict[str, Any]
 
 
 def _format_codepoint(cp: int) -> str:
-    """Return the canonical `U+XXXX` notation for `cp` (at least 4 hex digits)."""
     return f"U+{cp:04X}"
 
 
@@ -829,18 +841,24 @@ def combo_key_from_codepoints(cps: Iterable[int]) -> str | None:
 def _parse_combo_key(key: Any) -> str | None:
     """Parse a `U+XXXX(+U+XXXX...)` combination key to the canonical char-key.
 
-    Extracts every `U+XXXX` occurrence via regex, sorts the codepoints ascending, and
-    returns them joined as characters (the in-memory key form). Returns `None` when
-    `key` is not a string or yields no codepoints; a stray non-`U+` segment is tolerated
-    as long as at least one valid `U+XXXX` is present.
+    The key must be exactly one or more `U+XXXX` segments joined by `+` (a stray
+    non-codepoint segment, e.g. `"U+0E31foo+U+0E48"`, is rejected), must not repeat a
+    codepoint (`"U+0E31+U+0E31"` is rejected), and each codepoint must be at or below
+    the Unicode ceiling. Accepted codepoints are sorted ascending and returned joined
+    as characters (the in-memory key form). Returns `None` when `key` is not a string
+    or fails any check.
     """
     if not isinstance(key, str):
+        return None
+    if _COMBO_KEY_RE.fullmatch(key) is None:
         return None
     cps = []
     for match in _COMBO_CODEPOINT_RE.finditer(key):
         cp = int(match.group(1), 16)
         if 0 <= cp <= _MAX_CODEPOINT:
             cps.append(cp)
+    if len(set(cps)) != len(cps):
+        return None
     return combo_key_from_codepoints(cps)
 
 
@@ -853,11 +871,20 @@ def _coerce_int(value: Any, default: None) -> int | None: ...
 
 
 def _coerce_int(value: Any, default: int | None) -> int | None:
-    """Coerce `value` to `int`, returning `default` on `None`, a bool, or unparseable input."""
-    if value is None:
+    """Coerce `value` to `int`, returning `default` on `None`, a bool, or unparseable input.
+
+    Floats are accepted only when integral (`2.0` -> `2`); a fractional float like
+    `1.5` returns `default` instead of silently truncating to `1`. Numeric strings are
+    still coerced.
+    """
+    if value is None or isinstance(value, bool):
         return default
-    if isinstance(value, bool):
-        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not value.is_integer():
+            return default
+        return int(value)
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -865,14 +892,12 @@ def _coerce_int(value: Any, default: int | None) -> int | None:
 
 
 def _coerce_bool(value: Any) -> bool | None:
-    """Coerce `value` to `bool`, returning `None` for non-bool input."""
     if isinstance(value, bool):
         return value
     return None
 
 
 def _coerce_str(value: Any) -> str | None:
-    """Coerce `value` to `str`, returning `None` for non-string input."""
     if isinstance(value, str):
         return value
     return None

@@ -12,8 +12,10 @@ from thaipua.core.fonttools.settings import (
     SUB_BELOW_VOWEL,
     SUB_TONE_MARK,
     ConsonantSettings,
+    Metadata,
     Offset,
     PlacementSettings,
+    SnapConfig,
     SubstitutionRule,
     canonicalise_consonant_context,
     canonicalise_substitution_context,
@@ -196,28 +198,14 @@ def test_canonicalise_consonant_context_up_families() -> None:
     assert canonicalise_consonant_context(frozenset(), protrusion="up") == frozenset()
 
 
-def test_canonicalise_consonant_context_down_families() -> None:
-    assert canonicalise_consonant_context(frozenset({SUB_BELOW_VOWEL}), protrusion="down") == frozenset(
-        {SUB_BELOW_VOWEL}
-    )
-    assert canonicalise_consonant_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK}), protrusion="down") == frozenset(
-        {SUB_BELOW_VOWEL}
-    )
-    assert canonicalise_consonant_context(
-        frozenset({SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL}), protrusion="down"
-    ) == frozenset({SUB_BELOW_VOWEL})
-    assert canonicalise_consonant_context(frozenset({SUB_TONE_MARK}), protrusion="down") == frozenset({SUB_TONE_MARK})
-    assert canonicalise_consonant_context(frozenset({SUB_ABOVE_VOWEL}), protrusion="down") == frozenset(
-        {SUB_ABOVE_VOWEL}
-    )
-    assert canonicalise_consonant_context(frozenset(), protrusion="down") == frozenset()
-
-
 def test_consonant_without_protrusion_uses_generic_families() -> None:
     assert canonicalise_consonant_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK}), protrusion=None) == frozenset(
         {SUB_BELOW_VOWEL}
     )
     assert canonicalise_consonant_context(frozenset({SUB_TONE_MARK}), protrusion=None) == frozenset({SUB_TONE_MARK})
+    assert canonicalise_consonant_context(frozenset({SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL}), protrusion=None) == frozenset(
+        {SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL}
+    )
 
 
 def test_consonant_rule_below_only_does_not_fire_with_tone() -> None:
@@ -287,7 +275,7 @@ def test_consonant_rule_round_trip_collapses_above_stacks(tmp_path: Path) -> Non
     assert cs.substitution_for(CONSONANT_LO_CHULA, present_roles=frozenset({SUB_BELOW_VOWEL})) is None
 
 
-def test_down_consonant_rule_fires_only_with_below_vowel() -> None:
+def test_descender_below_rule_fires_only_with_below_present() -> None:
     cs = ConsonantSettings(
         glyph_substitutions={
             CONSONANT_YO_YING: [SubstitutionRule(replacement="cut_base", conditions=frozenset({SUB_BELOW_VOWEL}))]
@@ -302,7 +290,7 @@ def test_down_consonant_rule_fires_only_with_below_vowel() -> None:
     assert cs.substitution_for(CONSONANT_YO_YING, present_roles=frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})) is None
 
 
-def test_down_consonant_rule_below_plus_tone_fires_for_below_only() -> None:
+def test_descender_below_plus_tone_rule_fires_for_below_only() -> None:
     cs = ConsonantSettings(
         glyph_substitutions={
             CONSONANT_YO_YING: [
@@ -328,7 +316,7 @@ def test_unlisted_consonant_rule_keeps_generic_tone_merge() -> None:
     assert cs.substitution_for(CONSONANT_KO_KAI, present_roles=frozenset({SUB_TONE_MARK})) is None
 
 
-def test_down_consonant_rule_round_trip_collapses_to_below_family(tmp_path: Path) -> None:
+def test_descender_rule_round_trip_loads_below_tone_as_below_only(tmp_path: Path) -> None:
     data = {
         "version": 1,
         "consonants": {
@@ -350,7 +338,7 @@ def test_down_consonant_rule_round_trip_collapses_to_below_family(tmp_path: Path
     assert cs.substitution_for(CONSONANT_YO_YING, present_roles=frozenset({SUB_TONE_MARK})) is None
 
 
-def test_down_consonant_rule_serializes_conditions_in_canonical_form() -> None:
+def test_descender_rule_serializes_below_only_in_canonical_form() -> None:
     settings = PlacementSettings(
         consonants={
             CONSONANT_YO_YING: ConsonantSettings(
@@ -365,6 +353,37 @@ def test_down_consonant_rule_serializes_conditions_in_canonical_form() -> None:
     payload = settings_to_dict(settings)
     rules = payload["consonants"]["U+0E0D"]["glyph_substitutions"]["U+0E0D"]
     assert rules == [{"replacement": "cut_base", "conditions": ["below_vowel"]}]
+
+
+def test_descender_loads_below_and_below_plus_above_as_distinct(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {
+            "U+0E0D": {
+                "glyph_substitutions": {
+                    "U+0E0D": [
+                        {"replacement": "trim", "conditions": ["below_vowel"]},
+                        {"replacement": "trim_wide", "conditions": ["above_vowel", "below_vowel"]},
+                    ]
+                }
+            }
+        },
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    settings = load_placement_settings(path)
+    cs = settings.for_consonant(CONSONANT_YO_YING)
+    assert cs.substitution_for(CONSONANT_YO_YING, present_roles=frozenset({SUB_BELOW_VOWEL})) == "trim"
+    assert cs.substitution_for(CONSONANT_YO_YING, present_roles=frozenset({SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL})) == (
+        "trim_wide"
+    )
+    assert cs.substitution_for(CONSONANT_YO_YING, present_roles=frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK})) == "trim"
+    payload = settings_to_dict(settings)
+    rules = payload["consonants"]["U+0E0D"]["glyph_substitutions"]["U+0E0D"]
+    assert rules == [
+        {"replacement": "trim", "conditions": ["below_vowel"]},
+        {"replacement": "trim_wide", "conditions": ["above_vowel", "below_vowel"]},
+    ]
 
 
 def test_up_consonant_rule_serializes_conditions_in_canonical_form() -> None:
@@ -382,3 +401,183 @@ def test_up_consonant_rule_serializes_conditions_in_canonical_form() -> None:
     payload = settings_to_dict(settings)
     rules = payload["consonants"]["U+0E2C"]["glyph_substitutions"]["U+0E2C"]
     assert rules == [{"replacement": "short_tail", "conditions": ["above_vowel", "tone_mark"]}]
+
+
+def test_offset_add() -> None:
+    assert Offset(1, 2) + Offset(3, 4) == Offset(4, 6)
+    assert Offset() + Offset(-1, 0) == Offset(-1, 0)
+
+
+def test_full_round_trip_preserves_settings(tmp_path: Path) -> None:
+    settings = PlacementSettings(
+        metadata=Metadata(font_name="Sarabun", family_name="Sarabun", units_per_em=1000),
+        consonants={
+            CONSONANT_YO_YING: ConsonantSettings(
+                base_offsets={ROLE_TONE_MARK: Offset(-150, 10)},
+                mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-1, 2)}},
+                combo_offsets={f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}": {ROLE_TONE_MARK: Offset(5, 3)}},
+                snap_configs={"tone_mark_to_above_vowel": SnapConfig(enabled=True, gap=12)},
+                glyph_substitutions={
+                    CONSONANT_YO_YING: [
+                        SubstitutionRule(replacement="cut_base", conditions=frozenset({SUB_BELOW_VOWEL}))
+                    ]
+                },
+            )
+        },
+    )
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(settings_to_dict(settings)), encoding="utf-8")
+    assert load_placement_settings(path) == settings
+
+
+def test_load_rejects_unsupported_version(tmp_path: Path) -> None:
+    data = {
+        "version": 99,
+        "consonants": {"U+0E1B": {"base_offsets": {"tone_mark": {"x": 1, "y": 0}}}},
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    settings = load_placement_settings(path)
+    assert settings.consonants == {}
+    assert settings.version == 1
+
+
+def test_load_missing_file_returns_defaults(tmp_path: Path) -> None:
+    assert load_placement_settings(tmp_path / "nope.json").consonants == {}
+
+
+def test_load_invalid_json_returns_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text("{not json", encoding="utf-8")
+    assert load_placement_settings(path).consonants == {}
+
+
+def test_load_rejects_raw_thai_character_keys(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {"ก": {"base_offsets": {"tone_mark": {"x": 1, "y": 0}}}},
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_placement_settings(path).consonants == {}
+
+
+def test_load_skips_non_consonant_codepoint_keys(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {
+            "U+0E31": {"base_offsets": {"tone_mark": {"x": 1, "y": 0}}},
+            "U+0E1B": {"base_offsets": {"tone_mark": {"x": 2, "y": 0}}},
+        },
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    settings = load_placement_settings(path)
+    assert list(settings.consonants) == [0x0E1B]
+
+
+def test_load_rejects_mark_outside_group_category(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {
+            "U+0E1B": {
+                "mark_offsets": {
+                    "above_vowels": {"U+0E48": {"x": 1, "y": 0}},
+                    "tone_marks": {"U+0E48": {"x": 2, "y": 0}},
+                }
+            }
+        },
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    cs = load_placement_settings(path).for_consonant(0x0E1B)
+    assert cs.mark_offsets == {ROLE_TONE_MARK: {TONE_MAI_EK: Offset(2, 0)}}
+
+
+def test_load_rejects_junk_combo_keys(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {"U+0E1B": {"combo_offsets": {"U+0E31foo+U+0E48": {"tone_mark": {"x": 1, "y": 0}}}}},
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_placement_settings(path).for_consonant(0x0E1B).combo_offsets == {}
+
+
+def test_load_rejects_duplicate_combo_codepoints(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {"U+0E1B": {"combo_offsets": {"U+0E31+U+0E31": {"tone_mark": {"x": 1, "y": 0}}}}},
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_placement_settings(path).for_consonant(0x0E1B).combo_offsets == {}
+
+
+def test_load_normalizes_out_of_order_combo_key(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {"U+0E1B": {"combo_offsets": {"U+0E48+U+0E31": {"tone_mark": {"x": 5, "y": 3}}}}},
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    cs = load_placement_settings(path).for_consonant(0x0E1B)
+    assert cs.combo_offsets == {f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}": {ROLE_TONE_MARK: Offset(5, 3)}}
+
+
+def test_load_duplicate_condition_rules_last_wins(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {
+            "U+0E1B": {
+                "glyph_substitutions": {
+                    "U+0E48": [
+                        {"replacement": "first", "conditions": ["tone_mark"]},
+                        {"replacement": "second", "conditions": ["tone_mark"]},
+                    ]
+                }
+            }
+        },
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    cs = load_placement_settings(path).for_consonant(0x0E1B)
+    assert cs.substitution_for(TONE_MAI_EK, present_roles=frozenset({SUB_TONE_MARK})) == "second"
+
+
+def test_load_ignores_non_positive_and_fractional_units_per_em(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "metadata": {"units_per_em": -100},
+        "consonants": {"U+0E1B": {"base_offsets": {"tone_mark": {"x": 0, "y": 0}}}},
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_placement_settings(path).metadata.units_per_em is None
+    data["metadata"] = {"units_per_em": 1.5}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_placement_settings(path).metadata.units_per_em is None
+
+
+def test_load_treats_empty_metadata_strings_as_unset(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "metadata": {"font_name": "", "family_name": "Sarabun"},
+        "consonants": {"U+0E1B": {"base_offsets": {"tone_mark": {"x": 0, "y": 0}}}},
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    md = load_placement_settings(path).metadata
+    assert md.font_name is None
+    assert md.family_name == "Sarabun"
+
+
+def test_load_fractional_offset_coerces_to_zero(tmp_path: Path) -> None:
+    data = {
+        "version": 1,
+        "consonants": {"U+0E1B": {"mark_offsets": {"tone_marks": {"U+0E48": {"x": 1.5, "y": 0}}}}},
+    }
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    cs = load_placement_settings(path).for_consonant(0x0E1B)
+    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
