@@ -1,4 +1,4 @@
-"""Backend facade for the ThaiPUA desktop GUI.
+"""Backend facade for the desktop GUI.
 
 `FontService` owns the live `ThaiPuaFontGenerator` and isolates every fontTools call:
 panes ask for opaque `(codepoint, glyph name, metrics)` results and never touch `TTFont`

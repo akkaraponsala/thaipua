@@ -1,4 +1,4 @@
-"""PySide6 `QIcon` provider backed by tinted SVG assets for the ThaiPUA toolbar and pane buttons.
+"""PySide6 `QIcon` provider backed by tinted SVG assets for the toolbar and pane buttons.
 
 Every icon is a static SVG under `<assets>/icons/<name>.svg` — a 24-unit viewBox stroke
 drawing with `stroke-width="2"`, round caps/joins, and `stroke="currentColor"`. `Normal`

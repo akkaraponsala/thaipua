@@ -54,7 +54,7 @@ TEXT_FILTER = "Text / string-table files (*.txt *.strings *.dlstrings *.ilstring
 
 
 class MainWindow(QMainWindow):
-    """The ThaiPUA main window: top toolbar, three-column splitter, status bar."""
+    """The main window: top toolbar, three-column splitter, status bar."""
 
     def __init__(self) -> None:
         """Build the window with empty state; load the first Consonant page."""
