@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from thaipua.core.fonttools.settings import (
+    ROLE_ABOVE_VOWEL,
     ROLE_TONE_MARK,
     ROLE_TONE_MARK_ON_ABOVE_VOWEL,
     SUB_ABOVE_VOWEL,
@@ -583,3 +584,51 @@ def test_load_fractional_offset_coerces_to_zero(tmp_path: Path) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
     cs = load_placement_settings(path).for_consonant(0x0E1B)
     assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
+
+
+def test_mark_and_combo_offsets_are_additive() -> None:
+    combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
+    cs = ConsonantSettings(
+        mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
+        combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
+    )
+    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(15, 15)
+    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(10, 20)
+
+
+def test_mark_and_combo_and_base_are_additive() -> None:
+    combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
+    cs = ConsonantSettings(
+        base_offsets={ROLE_TONE_MARK: Offset(1, 1)},
+        mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
+        combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
+    )
+    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(16, 16)
+
+
+def test_state_mark_and_combo_additive_via_state_helpers() -> None:
+    from thaipua.core.fonttools.specs import CompositeSpec
+    from thaipua.gui.state import MarkCategory, apply_offset, current_mark_offset
+
+    cons = CONSONANT_KO_KAI
+    above = VOWEL_MAI_HAN_AKAT
+    tone = TONE_MAI_EK
+    spec_base = CompositeSpec(pua_code=0xE000, cons_uni=cons, above_uni=above)
+    spec_combo = CompositeSpec(pua_code=0xE001, cons_uni=cons, above_uni=above, tone_uni=tone)
+    settings = PlacementSettings()
+    apply_offset(spec_base, settings, 10, 20, category=MarkCategory.ABOVE_VOWEL)
+    assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(10, 20)
+    assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
+    apply_offset(spec_combo, settings, 5, -5, category=MarkCategory.ABOVE_VOWEL)
+    assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
+    cs = settings.for_consonant(cons)
+    assert cs.offset_for(
+        ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}"
+    ) == Offset(15, 15)
+    apply_offset(spec_base, settings, 0, 0, category=MarkCategory.ABOVE_VOWEL)
+    assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
+    assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
+    cs2 = settings.for_consonant(cons)
+    assert cs2.offset_for(
+        ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}"
+    ) == Offset(5, -5)

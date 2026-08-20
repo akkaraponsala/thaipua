@@ -186,9 +186,9 @@ def _mark_count(spec: CompositeSpec) -> int:
 def current_mark_offset(spec: CompositeSpec, settings: PlacementSettings, *, category: MarkCategory | None) -> Offset:
     """Resolve the per-glyph Mark Offset override for `spec`, *ignoring* `base_offsets`.
 
-    Reads only the `mark_offsets`/`combo_offsets` tiers, returning `Offset(0, 0)` when
-    unset, so the Mark Offset sliders stay independent of Base Offsets. This is purely
-    the *displayed* value — the composer resolves the live offset from the same tiers.
+    Single-mark glyphs return the generic `mark_offsets[role][mark]`; multi-mark glyphs
+    return the combo-specific `combo_offsets[combo_key][role]` additive delta. The
+    composer sums the tiers so the final position is generic + combo + base.
     """
     resolved = category if category is not None else infer_category(spec)
     if resolved is None:
@@ -197,12 +197,14 @@ def current_mark_offset(spec: CompositeSpec, settings: PlacementSettings, *, cat
     combo_key = combo_key_for(spec)
     role = _role_for_category(resolved)
     mark_uni = _mark_uni_for_role(spec, role)
-    if combo_key is not None:
-        combo = cs.combo_offsets.get(combo_key)
-        if combo is not None:
-            off = combo.get(role)
-            if off is not None:
-                return off
+    if _mark_count(spec) > 1:
+        if combo_key is not None:
+            combo = cs.combo_offsets.get(combo_key)
+            if combo is not None:
+                off = combo.get(role)
+                if off is not None:
+                    return off
+        return Offset()
     if mark_uni is not None:
         group = cs.mark_offsets.get(role)
         if group is not None:
@@ -217,10 +219,10 @@ def apply_offset(
 ) -> None:
     """Commit an `(x, y)` offset for `spec` into `settings` (mutates in place).
 
-    Single-mark glyphs write to `mark_offsets[role][mark_uni]`; multi-mark glyphs write
-    to `combo_offsets[combo_key][role]`, preserving the composer's precedence. Each role
-    is written independently. `settings.consonants` is auto-seeded with an empty
-    `ConsonantSettings` for `spec.cons_uni` when absent.
+    Single-mark glyphs write the generic `mark_offsets[role][mark_uni]`; multi-mark glyphs
+    write the additive delta `combo_offsets[combo_key][role]`. The final position is
+    generic + combo + base. A zero delta clears the combo entry to restore pure
+    inheritance. `settings.consonants` is auto-seeded when absent.
     """
     resolved = category if category is not None else infer_category(spec)
     if resolved is None:
@@ -232,11 +234,23 @@ def apply_offset(
     if mark_uni is None:
         return
     if _mark_count(spec) > 1:
-        combo_role_map = cs.combo_offsets.setdefault(combo_key or "", {})
-        combo_role_map[role] = Offset(x, y)
+        if x == 0 and y == 0:
+            combo_map = cs.combo_offsets.get(combo_key or "")
+            if combo_map is not None:
+                combo_map.pop(role, None)
+                if not combo_map:
+                    cs.combo_offsets.pop(combo_key or "", None)
+        else:
+            combo_role_map = cs.combo_offsets.setdefault(combo_key or "", {})
+            combo_role_map[role] = Offset(x, y)
     else:
         mark_role_map = cs.mark_offsets.setdefault(role, {})
-        mark_role_map[mark_uni] = Offset(x, y)
+        if x == 0 and y == 0:
+            mark_role_map.pop(mark_uni, None)
+            if not mark_role_map:
+                cs.mark_offsets.pop(role, None)
+        else:
+            mark_role_map[mark_uni] = Offset(x, y)
 
 
 def glyph_substitution_candidates(

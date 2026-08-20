@@ -137,8 +137,9 @@ class ConsonantSettings:
     Glyph substitutions are keyed by the substituted codepoint (the consonant's own for
     a self-substitution, or a mark codepoint for a mark stacked on this consonant).
     Placement offsets layer the per-glyph tiers on top of the base tier: a placed mark
-    resolves as `(combo_offsets[combo_key] or mark_offsets[role][mark] or Offset(0, 0))`
-    plus `(base_offsets[role] or Offset(0, 0))` (see `offset_for`).
+    resolves as `(mark_offsets[role][mark] or Offset(0, 0)) + (combo_offsets[combo_key][role] or Offset(0, 0))`
+    plus `(base_offsets[role] or Offset(0, 0))` (see `offset_for`). The combo tier is
+    additive on top of the generic mark tier, so the final position is generic + combo + base.
     """
 
     base_offsets: dict[str, Offset] = field(default_factory=dict)
@@ -164,23 +165,24 @@ class ConsonantSettings:
     def _per_glyph_offset(self, role: str, *, mark_uni: int | None, combo_key: str | None) -> Offset:
         """Return the per-glyph tier offset for `role`, or `Offset(0, 0)` when unset.
 
-        A matching `combo_offsets[combo_key]` entry for `role` wins over a matching
-        `mark_offsets[role][mark_uni]` entry (the combo covers a more specific mark
-        combination).
+        Both tiers are additive: generic `mark_offsets[role][mark_uni]` and specific
+        `combo_offsets[combo_key][role]` (when present) are summed, so the final
+        position is generic + combo + base.
         """
-        if combo_key is not None:
-            combo = self.combo_offsets.get(combo_key)
-            if combo is not None:
-                off = combo.get(role)
-                if off is not None:
-                    return off
+        total = Offset()
         if mark_uni is not None:
             group = self.mark_offsets.get(role)
             if group is not None:
                 off = group.get(mark_uni)
                 if off is not None:
-                    return off
-        return Offset()
+                    total = total + off
+        if combo_key is not None:
+            combo = self.combo_offsets.get(combo_key)
+            if combo is not None:
+                off = combo.get(role)
+                if off is not None:
+                    total = total + off
+        return total
 
     def snap_for(self, snap_name: str) -> SnapConfig | None:
         return self.snap_configs.get(snap_name)
@@ -732,7 +734,8 @@ def _combo_offsets_to_dict(combo_offsets: dict[str, dict[str, Offset]]) -> dict[
     """Serialize the combo-offsets map (canonical-key-sorted, zero-omitting).
 
     Combination keys are emitted as `U+XXXX` codepoints joined by `+` (in canonical
-    ascending-codepoint order, matching the in-memory key form).
+    ascending-codepoint order, matching the in-memory key form). Zero deltas are
+    omitted — they mean no combo-specific addition (pure inheritance).
     """
     out: dict[str, dict[str, dict[str, int]]] = {}
     for combo_key in sorted(combo_offsets):
