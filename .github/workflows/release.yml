@@ -23,17 +23,16 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Create venv and Install Dependencies
-        run: |
-          python -m venv venv
-          .\venv\Scripts\Activate.ps1
-          python -m pip install --upgrade pip
-          pip install -e .[dev]
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
 
-      - name: Build Standalone App with pyside6-deploy
-        run: |
-          .\venv\Scripts\Activate.ps1
-          pyside6-deploy -c pysidedeploy.spec
+      - name: Install Dependencies
+        run: uv sync
+
+      - name: Build Standalone Application
+        run: uv run pyside6-deploy -c pysidedeploy.spec
 
       - name: Compress Release Bundle
         run: |
