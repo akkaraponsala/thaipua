@@ -118,8 +118,8 @@ class SubstitutionRule:
     A rule fires for a cluster when every role in its `conditions` is present in the
     cluster's mark-role set (AND semantics), after both sides are canonicalised by the
     codepoint's category canonicaliser (see `context_canonicaliser`): a tone-mark
-    codepoint merges the below-vowel family into the tone-only family; an up-protruding
-    consonant self-substitution (e.g. ฬ) merges every above-stack context into
+    codepoint merges the below-vowel family into the tone-only family; an ascender-
+    protruding consonant self-substitution (e.g. ฬ) merges every above-stack context into
     `{above_vowel, tone_mark}`; every other consonant and vowel codepoint drops
     `tone_mark` within any vowel family. An empty `conditions` fires in any context
     (the always-on default). Among matching rules the most specific (longest
@@ -191,7 +191,7 @@ class ConsonantSettings:
         Both `present_roles` and each candidate rule's `conditions` are canonicalised by
         `context_canonicaliser(codepoint)`, so matching families depend on the
         substituted codepoint's category: a tone-mark rule's below-vowel family
-        addresses the tone-only slot (`canonicalise_tone_mark_context`); an up-
+        addresses the tone-only slot (`canonicalise_tone_mark_context`); an ascender-
         protruding consonant self-substitution (e.g. ฬ) fires for every above-stack
         context (`canonicalise_consonant_context`); every other consonant and vowel
         codepoint applies the generic `canonicalise_substitution_context`. A rule fires
@@ -563,10 +563,10 @@ def canonicalise_consonant_context(roles: frozenset[str], *, protrusion: str | N
     A consonant substitution swaps the consonant's own glyph to clear its protruding
     part, so the trigger depends on which side it protrudes:
 
-    - `protrusion == "up"` (tail/loop above the base line, e.g. ฬ): every cluster with
-      a mark stacked above — an `above_vowel` or a `tone_mark`, with or without a below
-      vowel — collapses to `{above_vowel, tone_mark}`; a below-vowel-only cluster stays
-      its own family (nothing is stacked above).
+    - `protrusion == "ascender"` (tail/loop above the base line, e.g. ฬ): every cluster
+      with a mark stacked above — an `above_vowel` or a `tone_mark`, with or without a
+      below vowel — collapses to `{above_vowel, tone_mark}`; a below-vowel-only cluster
+      stays its own family (nothing is stacked above).
     - Any other consonant (`protrusion` absent): the generic
       `canonicalise_substitution_context`, which drops `tone_mark` within a vowel
       family so a below-vowel rule does not leak into no-below-vowel clusters while
@@ -574,7 +574,7 @@ def canonicalise_consonant_context(roles: frozenset[str], *, protrusion: str | N
 
     The empty context (the always-on default) is returned unchanged in every case.
     """
-    if protrusion == "up":
+    if protrusion == "ascender":
         if SUB_ABOVE_VOWEL in roles or SUB_TONE_MARK in roles:
             return frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})
         return roles

@@ -181,21 +181,23 @@ def test_canonicalise_substitution_context_unchanged_within_vowel_families() -> 
     assert canonicalise_substitution_context(frozenset({SUB_TONE_MARK})) == frozenset({SUB_TONE_MARK})
 
 
-def test_canonicalise_consonant_context_up_families() -> None:
-    assert canonicalise_consonant_context(frozenset({SUB_BELOW_VOWEL}), protrusion="up") == frozenset({SUB_BELOW_VOWEL})
-    assert canonicalise_consonant_context(frozenset({SUB_TONE_MARK}), protrusion="up") == frozenset(
+def test_canonicalise_consonant_context_ascender_families() -> None:
+    assert canonicalise_consonant_context(frozenset({SUB_BELOW_VOWEL}), protrusion="ascender") == frozenset(
+        {SUB_BELOW_VOWEL}
+    )
+    assert canonicalise_consonant_context(frozenset({SUB_TONE_MARK}), protrusion="ascender") == frozenset(
         {SUB_ABOVE_VOWEL, SUB_TONE_MARK}
     )
-    assert canonicalise_consonant_context(frozenset({SUB_ABOVE_VOWEL}), protrusion="up") == frozenset(
+    assert canonicalise_consonant_context(frozenset({SUB_ABOVE_VOWEL}), protrusion="ascender") == frozenset(
         {SUB_ABOVE_VOWEL, SUB_TONE_MARK}
     )
-    assert canonicalise_consonant_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK}), protrusion="up") == frozenset(
-        {SUB_ABOVE_VOWEL, SUB_TONE_MARK}
-    )
-    assert canonicalise_consonant_context(frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK}), protrusion="up") == frozenset(
-        {SUB_ABOVE_VOWEL, SUB_TONE_MARK}
-    )
-    assert canonicalise_consonant_context(frozenset(), protrusion="up") == frozenset()
+    assert canonicalise_consonant_context(
+        frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK}), protrusion="ascender"
+    ) == frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})
+    assert canonicalise_consonant_context(
+        frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK}), protrusion="ascender"
+    ) == frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})
+    assert canonicalise_consonant_context(frozenset(), protrusion="ascender") == frozenset()
 
 
 def test_consonant_without_protrusion_uses_generic_families() -> None:
@@ -386,7 +388,7 @@ def test_descender_loads_below_and_below_plus_above_as_distinct(tmp_path: Path) 
     ]
 
 
-def test_up_consonant_rule_serializes_conditions_in_canonical_form() -> None:
+def test_ascender_consonant_rule_serializes_conditions_in_canonical_form() -> None:
     settings = PlacementSettings(
         consonants={
             CONSONANT_LO_CHULA: ConsonantSettings(

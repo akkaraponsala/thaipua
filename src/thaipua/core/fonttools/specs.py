@@ -29,14 +29,14 @@ ABOVE_VOWELS: set[int] = {3633, 3636, 3661, 3637, 3638, 3655, 3639}
 TONE_MARKS: set[int] = {3658, 3660, 3656, 3659, 3657}
 
 # Direction of a consonant's protruding part, used to scope consonant self-
-# substitutions: an "up" consonant (tail/loop extending above the base line, e.g. ฬ)
+# substitutions: an "ascender" consonant (tail/loop extending above the base line, e.g. ฬ)
 # must clear the stack above, so any above vowel or tone mark triggers its
 # substitution. Only actively-substituted consonants are listed; all others
 # (including the down-protruding descenders ญ ฐ ฎ ฏ) fall back to the generic
 # tone-within-vowel-family canonicalisation, which keeps a below-vowel rule from
 # firing in no-below-vowel clusters while leaving a below-plus-above cluster distinct.
 CONSONANT_PROTRUSION: dict[int, str] = {
-    ord("ฬ"): "up",
+    ord("ฬ"): "ascender",
 }
 
 

@@ -534,9 +534,9 @@ class ControlsPane(QWidget):
         `present_roles` set gates contextual matching (empty matches only always-on
         rules). Canonicalisation is per-codepoint category (`context_canonicaliser`):
         a tone-mark rule's below-vowel family surfaces for the tone-only cluster; an
-        up-protruding consonant rule (e.g. ฬ) surfaces for every above-stack context;
-        every other consonant and vowel rule uses the generic tone-within-vowel-family
-        canonicalisation.
+        ascender-protruding consonant rule (e.g. ฬ) surfaces for every above-stack
+        context; every other consonant and vowel rule uses the generic
+        tone-within-vowel-family canonicalisation.
         """
         combo = self._sub_combos[role]
         combo.blockSignals(True)

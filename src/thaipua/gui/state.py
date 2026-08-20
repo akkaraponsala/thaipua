@@ -309,9 +309,9 @@ def apply_glyph_substitution(
     `conditions` is canonicalised before storage by `context_canonicaliser(codepoint)`,
     so writes from contexts sharing one substitution slot address it and the latest
     write wins: a tone-mark codepoint collapses the below-vowel family into the
-    tone-only family; an up-protruding consonant (e.g. ฬ) collapses every above-stack
-    context into `{above_vowel, tone_mark}`; every other consonant and vowel codepoint
-    drops `tone_mark` within any vowel family.
+    tone-only family; an ascender-protruding consonant (e.g. ฬ) collapses every
+    above-stack context into `{above_vowel, tone_mark}`; every other consonant and
+    vowel codepoint drops `tone_mark` within any vowel family.
     """
     conditions = context_canonicaliser(codepoint)(conditions)
     cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
