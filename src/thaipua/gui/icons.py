@@ -30,6 +30,7 @@ IconName = Literal[
     "file-input",
     "search",
     "settings",
+    "table",
     "arrow-left",
     "axis-x",
     "axis-y",

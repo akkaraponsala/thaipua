@@ -36,7 +36,7 @@ from thaipua.core.fonttools.settings import (
     SnapConfig,
     SubstitutionRule,
     combo_key_from_codepoints,
-    context_canonicaliser,
+    context_canonicalizer,
     default_placement_settings,
 )
 from thaipua.core.fonttools.specs import THAI_CONSONANTS, CompositeSpec, iter_composite_specs
@@ -99,7 +99,7 @@ class AppState:
     dirty: bool = False
 
 
-def inference_supported_consonants() -> list[int]:
+def inferable_consonants() -> list[int]:
     """Return the 42 modern Thai consonant codepoints in canonical order.
 
     `THAI_CONSONANTS` is a `set`; this helper exposes the ordered list used to drive the
@@ -283,7 +283,7 @@ def glyph_substitution_candidates(
 def present_roles_for(spec: CompositeSpec) -> frozenset[str]:
     """Return the raw mark-role set present in `spec` for substitution context.
 
-    This is the literal set — the vowel-family canonicalisation (dropping `tone_mark`
+    This is the literal set — the vowel-family canonicalization (dropping `tone_mark`
     when a vowel is present) is applied downstream by `apply_glyph_substitution` and
     `ConsonantSettings.substitution_for`, so callers should pass this value through
     unchanged.
@@ -320,14 +320,14 @@ def apply_glyph_substitution(
     `consonants[cons_uni].glyph_substitutions[codepoint]` in place (seeding on first
     install, clearing the codepoint list when it empties).
 
-    `conditions` is canonicalised before storage by `context_canonicaliser(codepoint)`,
+    `conditions` is canonicalized before storage by `context_canonicalizer(codepoint)`,
     so writes from contexts sharing one substitution slot address it and the latest
     write wins: a tone-mark codepoint collapses the below-vowel family into the
     tone-only family; an ascender-protruding consonant (e.g. ฬ) collapses every
     above-stack context into `{above_vowel, tone_mark}`; every other consonant and
     vowel codepoint drops `tone_mark` within any vowel family.
     """
-    conditions = context_canonicaliser(codepoint)(conditions)
+    conditions = context_canonicalizer(codepoint)(conditions)
     cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
     rules = cs.glyph_substitutions.get(codepoint, [])
     for i, existing in enumerate(list(rules)):
@@ -423,7 +423,7 @@ __all__ = [
     "glyph_substitution_candidates",
     "group_composites_by_consonant",
     "infer_category",
-    "inference_supported_consonants",
+    "inferable_consonants",
     "present_roles_for",
     "pua_specs_for_consonant",
 ]

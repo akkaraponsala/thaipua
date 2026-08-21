@@ -1,15 +1,7 @@
 """GUI-free backend for Thai-to-PUA encoding and composite PUA font generation."""
 
-from thaipua.core.creation_engine import (
-    ParsedStringTable,
-    StringEntry,
-    StringTableError,
-    parse_strings_file,
-    write_strings_file,
-)
 from thaipua.core.encoding import (
     PuaEncodingMap,
-    detect_text_encoding,
     load_decode_table,
     load_encoding_map,
     load_pua_map_dict,
@@ -38,6 +30,14 @@ from thaipua.core.fonttools import (
     settings_to_dict,
 )
 from thaipua.core.profiles import ResolvedProfile, resolve_settings_profile
+from thaipua.core.string_table import (
+    ParsedStringTable,
+    StringEntry,
+    StringTableError,
+    parse_strings_file,
+    write_strings_file,
+)
+from thaipua.core.text_encoding import detect_text_encoding
 
 __all__ = [
     "ABOVE_VOWELS",

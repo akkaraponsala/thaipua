@@ -1,9 +1,9 @@
 """File-level codec pipeline for the Thai-to-PUA encode/decode toolset.
 
 Drives the in-memory transforms from `thaipua.core.encoding` against disk files. Each
-target file is routed to a Creation Engine string-table transform or a plain-text
-transform depending on its extension. Source byte encodings are preserved on output
-(see `detect_text_encoding` for plain text and `ParsedStringTable.encoding` for string
+target file is routed to a game string-table transform or a plain-text transform
+depending on its extension. Source byte encodings are preserved on output (see
+`detect_text_encoding` for plain text and `ParsedStringTable.encoding` for string
 tables).
 """
 
@@ -15,8 +15,9 @@ from functools import partial
 from pathlib import Path
 
 from thaipua.core.constants import STRING_TABLE_EXTENSIONS
-from thaipua.core.creation_engine import StringEntry, StringTableError, parse_strings_file, write_strings_file
-from thaipua.core.encoding import build_encode_transform, detect_text_encoding, load_decode_table, load_encoding_map
+from thaipua.core.encoding import build_encode_transform, load_decode_table, load_encoding_map
+from thaipua.core.string_table import StringEntry, StringTableError, parse_strings_file, write_strings_file
+from thaipua.core.text_encoding import detect_text_encoding
 
 logger = logging.getLogger(__name__)
 

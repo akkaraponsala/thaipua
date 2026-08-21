@@ -18,9 +18,9 @@ from thaipua.core.fonttools.settings import (
     PlacementSettings,
     SnapConfig,
     SubstitutionRule,
-    canonicalise_consonant_context,
-    canonicalise_substitution_context,
-    canonicalise_tone_mark_context,
+    canonicalize_consonant_context,
+    canonicalize_substitution_context,
+    canonicalize_tone_mark_context,
     load_placement_settings,
     settings_to_dict,
 )
@@ -78,16 +78,16 @@ def test_no_tiers_yields_zero() -> None:
     assert ConsonantSettings().offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
 
 
-def test_canonicalise_tone_mark_context_merges_below_family_with_tone_only() -> None:
-    assert canonicalise_tone_mark_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK})) == frozenset({SUB_TONE_MARK})
-    assert canonicalise_tone_mark_context(frozenset({SUB_BELOW_VOWEL})) == frozenset({SUB_TONE_MARK})
-    assert canonicalise_tone_mark_context(frozenset({SUB_TONE_MARK})) == frozenset({SUB_TONE_MARK})
+def test_canonicalize_tone_mark_context_merges_below_family_with_tone_only() -> None:
+    assert canonicalize_tone_mark_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK})) == frozenset({SUB_TONE_MARK})
+    assert canonicalize_tone_mark_context(frozenset({SUB_BELOW_VOWEL})) == frozenset({SUB_TONE_MARK})
+    assert canonicalize_tone_mark_context(frozenset({SUB_TONE_MARK})) == frozenset({SUB_TONE_MARK})
 
 
-def test_canonicalise_tone_mark_context_keeps_above_vowel_and_empty_families() -> None:
-    assert canonicalise_tone_mark_context(frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})) == frozenset({SUB_ABOVE_VOWEL})
-    assert canonicalise_tone_mark_context(frozenset({SUB_ABOVE_VOWEL})) == frozenset({SUB_ABOVE_VOWEL})
-    assert canonicalise_tone_mark_context(frozenset()) == frozenset()
+def test_canonicalize_tone_mark_context_keeps_above_vowel_and_empty_families() -> None:
+    assert canonicalize_tone_mark_context(frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})) == frozenset({SUB_ABOVE_VOWEL})
+    assert canonicalize_tone_mark_context(frozenset({SUB_ABOVE_VOWEL})) == frozenset({SUB_ABOVE_VOWEL})
+    assert canonicalize_tone_mark_context(frozenset()) == frozenset()
 
 
 def test_tone_rule_below_vowel_family_fires_for_tone_only_cluster() -> None:
@@ -175,38 +175,38 @@ def test_tone_rule_serializes_conditions_in_canonical_form() -> None:
     assert rules == [{"replacement": "tone_alt", "conditions": ["tone_mark"]}]
 
 
-def test_canonicalise_substitution_context_unchanged_within_vowel_families() -> None:
-    assert canonicalise_substitution_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK})) == frozenset(
+def test_canonicalize_substitution_context_unchanged_within_vowel_families() -> None:
+    assert canonicalize_substitution_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK})) == frozenset(
         {SUB_BELOW_VOWEL}
     )
-    assert canonicalise_substitution_context(frozenset({SUB_TONE_MARK})) == frozenset({SUB_TONE_MARK})
+    assert canonicalize_substitution_context(frozenset({SUB_TONE_MARK})) == frozenset({SUB_TONE_MARK})
 
 
-def test_canonicalise_consonant_context_ascender_families() -> None:
-    assert canonicalise_consonant_context(frozenset({SUB_BELOW_VOWEL}), protrusion="ascender") == frozenset(
+def test_canonicalize_consonant_context_ascender_families() -> None:
+    assert canonicalize_consonant_context(frozenset({SUB_BELOW_VOWEL}), protrusion="ascender") == frozenset(
         {SUB_BELOW_VOWEL}
     )
-    assert canonicalise_consonant_context(frozenset({SUB_TONE_MARK}), protrusion="ascender") == frozenset(
+    assert canonicalize_consonant_context(frozenset({SUB_TONE_MARK}), protrusion="ascender") == frozenset(
         {SUB_ABOVE_VOWEL, SUB_TONE_MARK}
     )
-    assert canonicalise_consonant_context(frozenset({SUB_ABOVE_VOWEL}), protrusion="ascender") == frozenset(
+    assert canonicalize_consonant_context(frozenset({SUB_ABOVE_VOWEL}), protrusion="ascender") == frozenset(
         {SUB_ABOVE_VOWEL, SUB_TONE_MARK}
     )
-    assert canonicalise_consonant_context(
+    assert canonicalize_consonant_context(
         frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK}), protrusion="ascender"
     ) == frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})
-    assert canonicalise_consonant_context(
+    assert canonicalize_consonant_context(
         frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK}), protrusion="ascender"
     ) == frozenset({SUB_ABOVE_VOWEL, SUB_TONE_MARK})
-    assert canonicalise_consonant_context(frozenset(), protrusion="ascender") == frozenset()
+    assert canonicalize_consonant_context(frozenset(), protrusion="ascender") == frozenset()
 
 
 def test_consonant_without_protrusion_uses_generic_families() -> None:
-    assert canonicalise_consonant_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK}), protrusion=None) == frozenset(
+    assert canonicalize_consonant_context(frozenset({SUB_BELOW_VOWEL, SUB_TONE_MARK}), protrusion=None) == frozenset(
         {SUB_BELOW_VOWEL}
     )
-    assert canonicalise_consonant_context(frozenset({SUB_TONE_MARK}), protrusion=None) == frozenset({SUB_TONE_MARK})
-    assert canonicalise_consonant_context(frozenset({SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL}), protrusion=None) == frozenset(
+    assert canonicalize_consonant_context(frozenset({SUB_TONE_MARK}), protrusion=None) == frozenset({SUB_TONE_MARK})
+    assert canonicalize_consonant_context(frozenset({SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL}), protrusion=None) == frozenset(
         {SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL}
     )
 
@@ -622,13 +622,9 @@ def test_state_mark_and_combo_additive_via_state_helpers() -> None:
     apply_offset(spec_combo, settings, 5, -5, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
     cs = settings.for_consonant(cons)
-    assert cs.offset_for(
-        ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}"
-    ) == Offset(15, 15)
+    assert cs.offset_for(ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}") == Offset(15, 15)
     apply_offset(spec_base, settings, 0, 0, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
     cs2 = settings.for_consonant(cons)
-    assert cs2.offset_for(
-        ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}"
-    ) == Offset(5, -5)
+    assert cs2.offset_for(ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}") == Offset(5, -5)

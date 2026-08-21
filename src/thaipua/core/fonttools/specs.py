@@ -3,7 +3,7 @@
 Each mapping key is a consonant plus one or more combining marks, and its value is the
 single PUA codepoint the cluster should render as. `iter_composite_specs` splits each
 key into the consonant, below-vowel, above-vowel, and tone-mark codepoints consumed by
-`ThaiPuaFontGenerator.create_composite`, so glyph generation is driven entirely by the
+`ThaiPuaFontGenerator.install_composite`, so glyph generation is driven entirely by the
 mapping file.
 
 SARA AM (U+0E33) is expected to be normalized upstream (see
@@ -33,7 +33,7 @@ TONE_MARKS: set[int] = {3658, 3660, 3656, 3659, 3657}
 # must clear the stack above, so any above vowel or tone mark triggers its
 # substitution. Only actively-substituted consonants are listed; all others
 # (including the down-protruding descenders ญ ฐ ฎ ฏ) fall back to the generic
-# tone-within-vowel-family canonicalisation, which keeps a below-vowel rule from
+# tone-within-vowel-family canonicalization, which keeps a below-vowel rule from
 # firing in no-below-vowel clusters while leaving a below-plus-above cluster distinct.
 CONSONANT_PROTRUSION: dict[int, str] = {
     ord("ฬ"): "ascender",

@@ -13,13 +13,21 @@ from typing import TYPE_CHECKING
 from fontTools.ttLib import TTLibError
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QFont, QFontDatabase, QPainterPath
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from thaipua.core.constants import DEFAULT_PROFILES_DIR
-from thaipua.core.creation_engine import StringTableError
 from thaipua.core.file_codec import decode_files, encode_files
 from thaipua.core.fonttools.settings import SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL, SUB_CONSONANT, SUB_TONE_MARK
 from thaipua.core.fonttools.specs import CompositeSpec
+from thaipua.core.string_table import StringTableError
 from thaipua.gui import icons, theme
 from thaipua.gui.font_service import FontService
 from thaipua.gui.state import (
@@ -34,15 +42,16 @@ from thaipua.gui.state import (
     current_mark_offset,
     group_composites_by_consonant,
     infer_category,
-    inference_supported_consonants,
+    inferable_consonants,
     present_roles_for,
     pua_specs_for_consonant,
 )
 from thaipua.gui.theme import ThemeMode
+from thaipua.gui.widgets.controls_pane import ControlsPane
 from thaipua.gui.widgets.dialogs import FindSubstitutionDialog, SettingsDialog
-from thaipua.gui.widgets.left_pane import CellVisual, GlyphGridPane
-from thaipua.gui.widgets.middle_pane import GlyphPreviewPane
-from thaipua.gui.widgets.right_pane import ControlsPane
+from thaipua.gui.widgets.glyph_grid_pane import CellVisual, GlyphGridPane
+from thaipua.gui.widgets.preview_pane import GlyphPreviewPane
+from thaipua.gui.widgets.pua_mapping_dialog import PuaMappingDialog
 from thaipua.gui.widgets.status_footer import StatusBar
 from thaipua.gui.widgets.top_toolbar import TopToolbar
 
@@ -72,7 +81,7 @@ class MainWindow(QMainWindow):
         self._grid_refresh_timer = QTimer(self)
         self._grid_refresh_timer.setSingleShot(True)
         self._grid_refresh_timer.setInterval(300)
-        self._grid_refresh_timer.timeout.connect(self._refresh_left_pane)
+        self._grid_refresh_timer.timeout.connect(self._refresh_grid_pane)
         self._build_layout()
         self._connect_signals()
         theme.apply_theme(mode=theme.load_theme_mode())
@@ -111,6 +120,7 @@ class MainWindow(QMainWindow):
         toolbar.decode_pua_requested.connect(self._on_decode_pua)
         toolbar.encode_thai_requested.connect(self._on_encode_thai)
         toolbar.find_substitution_requested.connect(self._on_find_substitution)
+        toolbar.edit_mapping_requested.connect(self._on_edit_mapping)
         toolbar.settings_requested.connect(self._on_settings)
         grid = self._grid_pane
         grid.consonant_clicked.connect(self._on_consonant_clicked)
@@ -154,7 +164,7 @@ class MainWindow(QMainWindow):
         self._grid_pane.set_loaded_font(self._qfont)
         self._grid_pane.set_font_loaded(True)
         self._toolbar.set_font_loaded(True)
-        self._refresh_left_pane()
+        self._refresh_grid_pane()
         self._refresh_footer()
         self._preview_pane.clear()
         self._preview_pane.set_metadata(None, None)
@@ -215,6 +225,30 @@ class MainWindow(QMainWindow):
         dialog = FindSubstitutionDialog(self._service.find_substitutions(), self)
         dialog.exec()
 
+    def _on_edit_mapping(self) -> None:
+        """Open the PUA mapping editor; Apply persists and refreshes dependent panes.
+
+        `MainWindow` stays the single `AppState` mutator: the dialog returns its edited
+        mapping, which replaces `state.pua_map` only on accept, is persisted through
+        `FontService.save_pua_map`, and triggers a grid/index rebuild. Structural
+        issues are advisory (badges in the editor); installs skip locked slots at
+        regeneration time regardless.
+        """
+        if not self._service.is_loaded:
+            return
+        dialog = PuaMappingDialog(dict(self._state.pua_map), self._service.pua_slot_context(), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_map = dialog.result_mapping()
+        if new_map == self._state.pua_map:
+            return
+        self._state.pua_map = new_map
+        self._service.save_pua_map(new_map)
+        self._rebuild_pua_index()
+        self._state.dirty = True
+        self._refresh_footer()
+        self._schedule_grid_refresh()
+
     def _on_settings(self) -> None:
         """Open the preferences dialog with live Light/Dark/System theme switching.
 
@@ -249,7 +283,7 @@ class MainWindow(QMainWindow):
         self._toolbar.refresh_icons()
         self._grid_pane.refresh_icons()
         self._controls_pane.refresh_icons()
-        self._refresh_left_pane()
+        self._refresh_grid_pane()
         self._preview_pane.refresh()
 
     def _on_consonant_clicked(self, cons_uni: int) -> None:
@@ -259,7 +293,7 @@ class MainWindow(QMainWindow):
         self._state.active_consonant_uni = cons_uni
         self._state.pua_page = 0
         self._state.active_pua_code = None
-        self._refresh_left_pane()
+        self._refresh_grid_pane()
         self._render_codepoint(cons_uni)
         self._controls_pane.load_consonant_settings(cons_uni, self._state.settings, self._sub_catalog)
         self._controls_pane.set_enabled(False)
@@ -294,7 +328,7 @@ class MainWindow(QMainWindow):
         self._state.active_consonant_uni = None
         self._state.active_pua_code = None
         self._state.pua_page = 0
-        self._refresh_left_pane()
+        self._refresh_grid_pane()
         self._preview_pane.clear()
         self._preview_pane.set_metadata(None, None)
         self._controls_pane.set_enabled(False)
@@ -306,15 +340,15 @@ class MainWindow(QMainWindow):
             self._state.consonants_page -= 1
         else:
             self._state.pua_page -= 1
-        self._refresh_left_pane()
+        self._refresh_grid_pane()
 
     def _on_next_page(self) -> None:
-        """Increment the current grid page; clamps via `_refresh_left_pane`."""
+        """Increment the current grid page; clamps via `_refresh_grid_pane`."""
         if self._state.active_consonant_uni is None:
             self._state.consonants_page += 1
         else:
             self._state.pua_page += 1
-        self._refresh_left_pane()
+        self._refresh_grid_pane()
 
     def _on_offset_changed(self, x: int, y: int) -> None:
         """Live-commit an offset change for the active glyph under the radio role.
@@ -353,18 +387,18 @@ class MainWindow(QMainWindow):
         """Live-commit a contextual glyph substitution and re-render the glyph.
 
         An empty `glyph_name` clears the matching rule (whose `conditions` equals the
-        active context's canonicalised mark-role set), leaving other rules for the same
+        active context's canonicalized mark-role set), leaving other rules for the same
         codepoint untouched. Per-role dispatch: consonant uses `active_consonant_uni` as
         both `codepoint` and `cons_uni`, with `present_roles` from the PUA spec (or
         empty when only the consonant page is active); mark roles use the spec's mark
         codepoint, `spec.cons_uni`, and the spec's present roles (requiring a selected
-        PUA glyph).         `conditions` is canonicalised per codepoint category
-        (`context_canonicaliser`): a tone-mark codepoint merges the below-vowel family
+        PUA glyph).         `conditions` is canonicalized per codepoint category
+        (`context_canonicalizer`): a tone-mark codepoint merges the below-vowel family
         with the tone-only family; an ascender-protruding consonant (e.g. ฬ) merges every
         above-stack context (`above_vowel` and/or `tone_mark`, with or without a below
         vowel) into one family — so a consonant substitution defined on an `above_vowel`
         cluster also applies to its tone clusters. Every other consonant and vowel
-        codepoint uses the generic tone-within-vowel-family canonicalisation, which
+        codepoint uses the generic tone-within-vowel-family canonicalization, which
         keeps a below-vowel rule from firing in no-below-vowel clusters.
         """
         spec = self._active_spec()
@@ -499,8 +533,8 @@ class MainWindow(QMainWindow):
                 index[spec.pua_code] = spec
         self._pua_index = index
 
-    def _refresh_left_pane(self) -> None:
-        """Re-render the left pane per the current view-state and pagination."""
+    def _refresh_grid_pane(self) -> None:
+        """Re-render the grid pane per the current view-state and pagination."""
         if self._state.active_consonant_uni is None:
             self._show_consonants_page()
         else:
@@ -518,7 +552,7 @@ class MainWindow(QMainWindow):
 
     def _show_consonants_page(self) -> None:
         """Render the current consonant-index page (clamped pagination)."""
-        cons = inference_supported_consonants()
+        cons = inferable_consonants()
         total_pages = max(1, (len(cons) + GRID_PAGE_SIZE - 1) // GRID_PAGE_SIZE)
         self._state.consonants_page = max(0, min(self._state.consonants_page, total_pages - 1))
         page = self._state.consonants_page

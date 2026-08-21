@@ -7,12 +7,13 @@ stays unit-testable with a lightweight path-like sink (see
 `thaipua.gui.glyph_pen.PathLike`).
 
 Live preview rebuilds the in-memory composite on every offset change (see
-`regenerate_composite`); nothing is written to disk until *Save Font*.
+`regenerate_composite`) — installs replace glyphs in place under stable prefixed names,
+so no eviction step is needed; slot locking (unrecognized foreign content) is
+reported via `InstallResult`. Nothing is written to disk until *Save Font*.
 """
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -25,7 +26,13 @@ from thaipua.core.constants import DEFAULT_PROFILES_DIR, DEFAULT_PUA_MAP_PATH, P
 from thaipua.core.encoding import load_pua_map_dict
 from thaipua.core.fonttools.alternates import GlyphSubstitution, find_glyph_substitutions
 from thaipua.core.fonttools.bounding_box import BoundingBox
-from thaipua.core.fonttools.composer import ComponentPlacement, ThaiPuaFontGenerator
+from thaipua.core.fonttools.composer import (
+    ComponentPlacement,
+    InstallResult,
+    InstallStatus,
+    ThaiPuaFontGenerator,
+)
+from thaipua.core.fonttools.map_validation import PuaSlotContext, slot_context_from_font
 from thaipua.core.fonttools.settings import (
     SUB_ABOVE_VOWEL,
     SUB_BELOW_VOWEL,
@@ -36,7 +43,7 @@ from thaipua.core.fonttools.settings import (
 )
 from thaipua.core.fonttools.specs import CompositeSpec, iter_composite_specs
 from thaipua.core.profiles import resolve_settings_profile
-from thaipua.core.pua_allocator import THAI_SUFFIXES
+from thaipua.core.pua_map import THAI_SUFFIXES
 from thaipua.gui.glyph_pen import PathLike, render_glyph_path, render_placed_components
 
 logger = logging.getLogger(__name__)
@@ -126,7 +133,7 @@ class FontService:
 
     @property
     def pua_map_path(self) -> str:
-        """Return the path to the on-disk PUA map mutated by `extend_pua_mapping`."""
+        """Return the path to the on-disk PUA map mutated by `ensure_pua_map`."""
         return self._pua_map_path
 
     def set_pua_map_path(self, path: str) -> None:
@@ -167,35 +174,34 @@ class FontService:
     def ensure_pua_map(self) -> dict[str, str]:
         """Load the Thai-to-PUA map from the stored path, returning it ready for use.
 
-        Allocates a full mapping when the file is missing or empty. A pre-existing
-        mapping whose entries collide with the loaded font's cmap is repaired and
-        persisted.
+        Allocates a full mapping only when the file is missing or empty (first-run
+        bootstrap). A pre-existing mapping is **never mutated on load** — it belongs to
+        the user: collisions surface as validator badges (`map_validation`) in the
+        mapping editor and as skipped installs at regeneration time.
         """
         mapping = self.load_pua_map()
         if not mapping:
             logger.info("PUA map empty at %s; allocating full mapping", self._pua_map_path)
-            mapping = self.extend_pua_mapping()
-        else:
-            mapping = self._repair_pua_map(mapping)
+            mapping = self.allocate_pua_map()
         return mapping
 
     def save_pua_map(self, mapping: dict[str, str]) -> None:
         """Persist `mapping` back to the stored PUA-map path as UTF-8 JSON."""
-        from thaipua.core.pua_allocator import save_pua_map
+        from thaipua.core.pua_map import save_pua_map
 
         save_pua_map(mapping, self._pua_map_path)
 
-    def extend_pua_mapping(self) -> dict[str, str]:
+    def allocate_pua_map(self) -> dict[str, str]:
         """Allocate PUA codepoints for every consonant/suffix combination.
 
         Codepoints mapped in the live font's cmap are reserved, so allocations never
         collide with the font. Returns the freshly reloaded map.
         """
-        from thaipua.core.pua_allocator import extend_pua_mapping
+        from thaipua.core.pua_map import ensure_pua_map
 
-        extend_pua_mapping(
+        ensure_pua_map(
             THAI_SUFFIXES,
-            filename=self._pua_map_path,
+            path=self._pua_map_path,
             start_pua=PUA_RANGE_START,
             reserved_pua_chars=self._occupied_pua_chars(),
         )
@@ -210,51 +216,15 @@ class FontService:
             return set()
         return {chr(cp) for cp in self._gen.font.getBestCmap() if PUA_RANGE_START <= cp <= PUA_RANGE_END}
 
-    def _foreign_pua_chars(self) -> set[str]:
-        """Return PUA characters the loaded font maps to non-composite glyphs.
+    def pua_slot_context(self) -> PuaSlotContext | None:
+        """Snapshot the live font's cmap/glyf facts for PUA-map validation.
 
-        Composite glyphs are excluded (presumed generated earlier by this tool) and
-        only counted in a log line, so a third-party composite squatting on a PUA slot
-        stays observable. Cmap entries whose glyph is absent from `glyf` still count
-        as foreign: `create_composite`'s skip guard consults the cmap, not `glyf`.
-        Returns an empty set when no font is loaded, and every occupied PUA character
-        when the font has no `glyf` table.
+        Returns `None` when no font is loaded; `validate_pua_map` then runs structural
+        checks only.
         """
         if self._gen is None or self._gen.font is None:
-            return set()
-        font = self._gen.font
-        glyf = font.get("glyf")
-        if glyf is None:
-            return self._occupied_pua_chars()
-        occupied = set()
-        owned_composites = 0
-        for cp, glyph_name in font.getBestCmap().items():
-            if not (PUA_RANGE_START <= cp <= PUA_RANGE_END):
-                continue
-            if glyph_name in glyf and glyf[glyph_name].isComposite():
-                owned_composites += 1
-                continue
-            occupied.add(chr(cp))
-        if owned_composites:
-            logger.info(
-                "Treating %d PUA codepoint(s) mapped to composite glyphs as owned by this tool", owned_composites
-            )
-        return occupied
-
-    def _repair_pua_map(self, mapping: dict[str, str]) -> dict[str, str]:
-        """Reallocate entries colliding with the live font's cmap and persist the result.
-
-        Returns the repaired (possibly unchanged) map.
-        """
-        from thaipua.core.pua_allocator import reallocate_colliding_entries
-
-        repaired = reallocate_colliding_entries(mapping, self._foreign_pua_chars())
-        if repaired != mapping:
-            moved = sum(1 for key, old in mapping.items() if repaired.get(key) != old)
-            self.save_pua_map(repaired)
-            self._pua_map = repaired
-            logger.warning("PUA map repaired: reallocated %d entry(ies) in %s", moved, self._pua_map_path)
-        return repaired
+            return None
+        return slot_context_from_font(self._gen.font)
 
     def glyph_name_for(self, codepoint: int) -> str | None:
         """Return the font's glyph name for `codepoint`, or `None` when unmapped."""
@@ -422,10 +392,9 @@ class FontService:
 
         Non-mutating: placements come from the generator's read-only
         `compose_components`, so the grid can preview live offsets/substitutions/snaps
-        for any codepoint — installed or not — with no eviction, no `[SKIP-OWNED]`
-        guard interaction, and no change to the installed-composite bookkeeping.
-        Returns `None` when the consonant glyph is missing from the font (nothing
-        drawn).
+        for any codepoint — installed or not — with no slot-ownership checks and no
+        change to installed-composite state. Returns `None` when the consonant glyph is
+        missing from the font (nothing drawn).
         """
         if self._gen is None or self._gen.font is None:
             return None
@@ -472,29 +441,45 @@ class FontService:
     ) -> GlyphRender:
         """Rebuild `spec` at its PUA codepoint under `settings` and optionally draw it.
 
-        The composite is evicted and re-installed so successive edits on the same
-        codepoint reflect new offsets instead of being skipped by `create_composite`'s
-        "owned PUA" guard.
+        Installs are replace-in-place (see `ThaiPuaFontGenerator.install_composite`), so
+        successive edits on the same codepoint always reflect the latest offsets — no
+        eviction step. Locked slots are skipped inside the composer; the render then
+        falls back to whatever glyph currently occupies the codepoint.
         """
         if self._gen is None:
             raise RuntimeError("Cannot regenerate composites without a loaded font.")
-        font = self._gen.font
-        self._evict_composite(spec.pua_code, font)
-        self._gen.settings = settings
-        self._gen.create_composite(spec.pua_code, spec.cons_uni, spec.below_uni, spec.above_uni, spec.tone_uni)
+        result = self._gen.install_composite(
+            spec.pua_code,
+            spec.cons_uni,
+            spec.below_uni,
+            spec.above_uni,
+            spec.tone_uni,
+            settings=settings,
+        )
+        logger.debug("Regenerated U+%04X: %s", spec.pua_code, result.status.value)
         if path is None:
             return self.render_glyph(spec.pua_code, _NullPath(), spec=spec)
         return self.render_glyph(spec.pua_code, path, spec=spec)
 
-    def regenerate_all(self, settings: PlacementSettings, pua_map: dict[str, str]) -> None:
-        """Rebuild every composite in `pua_map` after applying `settings`."""
+    def regenerate_all(self, settings: PlacementSettings, pua_map: dict[str, str]) -> list[InstallResult]:
+        """Rebuild every composite in `pua_map` under `settings`.
+
+        Returns one `InstallResult` per spec so callers can report skipped locked
+        slots instead of losing them in per-glyph logs.
+        """
         if self._gen is None:
             raise RuntimeError("Cannot regenerate composites without a loaded font.")
-        self._gen.settings = settings
-        font = self._gen.font
-        for spec in iter_composite_specs(pua_map):
-            self._evict_composite(spec.pua_code, font)
-            self._gen.create_composite(spec.pua_code, spec.cons_uni, spec.below_uni, spec.above_uni, spec.tone_uni)
+        return [
+            self._gen.install_composite(
+                spec.pua_code,
+                spec.cons_uni,
+                spec.below_uni,
+                spec.above_uni,
+                spec.tone_uni,
+                settings=settings,
+            )
+            for spec in iter_composite_specs(pua_map)
+        ]
 
     def save_font(self, output_path: str | Path | None, settings: PlacementSettings, pua_map: dict[str, str]) -> str:
         """Rebuild all composites and write the resulting font to `output_path`.
@@ -509,7 +494,10 @@ class FontService:
         target = str(output_path) if output_path is not None else self._output_path
         if target is None:
             raise RuntimeError("Cannot save: no output path available.")
-        self.regenerate_all(settings, pua_map)
+        results = self.regenerate_all(settings, pua_map)
+        locked = sum(1 for result in results if result.status is InstallStatus.SKIPPED_LOCKED)
+        if locked:
+            logger.warning("Saved font keeps %d locked PUA slot(s) untouched (unrecognized content)", locked)
         self._gen.font.save(target)
         self._output_path = target
         self._persist_profile(settings)
@@ -548,48 +536,6 @@ class FontService:
         self._src_path = None
         self._output_path = None
         self._profiles_dir = DEFAULT_PROFILES_DIR
-
-    def _evict_composite(self, pua_code: int, font: TTFont) -> None:
-        """Remove any glyph currently mapped to `pua_code` from the live font.
-
-        Mutation surface:
-        - drops the cmap entry from every Unicode subtable and the generator's private
-          dict copy (its `[SKIP-OWNED]` guard consults that copy),
-        - deletes the glyph from `glyf`/`hmtx` and prunes `glyphSet` order,
-        - invalidates the bounding-box cache entry for the evicted name, since
-          `create_composite` reinstalls the composite at the same name and a stale
-          cached bbox would otherwise feed the preview's viewport fit.
-
-        A no-op when `pua_code` is free.
-        """
-        if self._gen is None:
-            return
-        cmap_copy = self._gen._cmap
-        existing = cmap_copy.pop(pua_code, None)
-        if existing is None and not _glyph_present_in_cmap(font, pua_code):
-            return
-        if existing is None:
-            existing = font.getBestCmap().get(pua_code)
-        if existing is None:
-            return
-        self._gen.bbox.invalidate(existing)
-        for table in font["cmap"].tables:
-            if table.isUnicode():
-                table.cmap.pop(pua_code, None)
-        with contextlib.suppress(KeyError):
-            del font["glyf"][existing]
-        metrics = font["hmtx"].metrics
-        metrics.pop(existing, None)
-        order = list(font.getGlyphOrder())
-        if existing in order:
-            order.remove(existing)
-            font.setGlyphOrder(order)
-        self._gen._glyph_names.discard(existing)
-
-
-def _glyph_present_in_cmap(font: TTFont, codepoint: int) -> bool:
-    """Return `True` when any Unicode cmap subtable maps `codepoint`."""
-    return any(table.isUnicode() and codepoint in table.cmap for table in font["cmap"].tables)
 
 
 def _units_per_em(font: TTFont) -> int:

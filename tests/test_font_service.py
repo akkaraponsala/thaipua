@@ -1,4 +1,4 @@
-"""Unit tests for `FontService`'s font-aware PUA collision handling."""
+"""Unit tests for `FontService`'s PUA map loading and slot-context snapshotting."""
 
 from __future__ import annotations
 
@@ -6,9 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-from thaipua.core.encoding import load_pua_map_dict
 from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
-from thaipua.core.pua_allocator import save_pua_map
 from thaipua.gui.font_service import FontService
 
 
@@ -55,48 +53,37 @@ def _service_with_font(cmap: dict[int, str], glyf: _FakeGlyf | None = None) -> F
     return service
 
 
-def test_foreign_pua_chars_is_empty_without_a_font() -> None:
-    assert FontService()._foreign_pua_chars() == set()
+def test_pua_slot_context_is_none_without_a_font() -> None:
+    assert FontService().pua_slot_context() is None
 
 
-def test_foreign_pua_chars_excludes_composite_glyphs() -> None:
-    cmap = {0xE000: "simple", 0xE001: "composite", 0x0E01: "ko_kai"}
-    glyf = _FakeGlyf({"simple": _FakeGlyph(False), "composite": _FakeGlyph(True)})
-    assert _service_with_font(cmap, glyf)._foreign_pua_chars() == {chr(0xE000)}
+def test_pua_slot_context_snapshots_cmap_and_glyf() -> None:
+    cmap = {0xE000: "logo", 0x0E01: "ko_kai"}
+    glyf = _FakeGlyf({"logo": _FakeGlyph(False), "ko_kai": _FakeGlyph(False)})
+    context = _service_with_font(cmap, glyf).pua_slot_context()
+    assert context is not None
+    assert context.cmap == cmap
+    assert context.glyf is glyf
 
 
-def test_foreign_pua_chars_reserves_cmap_entries_without_a_glyf_glyph() -> None:
-    cmap = {0xE000: "ghost", 0xE001: "composite"}
-    glyf = _FakeGlyf({"composite": _FakeGlyph(True)})
-    assert _service_with_font(cmap, glyf)._foreign_pua_chars() == {chr(0xE000)}
+def test_occupied_pua_chars_scans_the_font_cmap() -> None:
+    cmap = {0xE000: "a", 0xE001: "b", 0x0E01: "ko_kai"}
+    assert _service_with_font(cmap)._occupied_pua_chars() == {chr(0xE000), chr(0xE001)}
 
 
-def test_foreign_pua_chars_reserves_everything_without_a_glyf_table() -> None:
-    cmap = {0xE000: "simple", 0xE001: "composite", 0x0E01: "ko_kai"}
-    assert _service_with_font(cmap, None)._foreign_pua_chars() == {chr(0xE000), chr(0xE001)}
-
-
-def test_repair_pua_map_reallocates_collisions_and_persists(tmp_path: Path) -> None:
+def test_ensure_pua_map_bootstraps_an_empty_map_and_never_touches_existing(
+    tmp_path: Path,
+) -> None:
+    """An existing mapping file is loaded as-is — the user owns the static map."""
     service = FontService()
-    service.set_pua_map_path(str(tmp_path / "pua.json"))
-    mapping = {"ก": chr(0xE000), "ข": chr(0xE001)}
-    save_pua_map(mapping, service.pua_map_path)
-    font = _FakeFont({0xE000: "foreign"}, _FakeGlyf({"foreign": _FakeGlyph(False)}))
-    service._gen = cast(ThaiPuaFontGenerator, SimpleNamespace(font=font))
-    repaired = service._repair_pua_map(mapping)
-    assert repaired["ก"] != chr(0xE000)
-    assert repaired["ข"] == chr(0xE001)
-    assert service.pua_map == repaired
-    assert load_pua_map_dict(service.pua_map_path) == repaired
+    map_path = tmp_path / "pua.json"
+    service.set_pua_map_path(str(map_path))
+    existing = {"ก่": chr(0xF100)}
+    from thaipua.core.pua_map import save_pua_map
 
+    save_pua_map(existing, str(map_path))
 
-def test_repair_pua_map_leaves_non_colliding_map_untouched(tmp_path: Path) -> None:
-    service = FontService()
-    service.set_pua_map_path(str(tmp_path / "pua.json"))
-    mapping = {"ก": chr(0xE000), "ข": chr(0xE001)}
-    service._pua_map = mapping
-    font = _FakeFont({}, _FakeGlyf({}))
-    service._gen = cast(ThaiPuaFontGenerator, SimpleNamespace(font=font))
-    assert service._repair_pua_map(mapping) == mapping
-    assert service.pua_map == mapping
-    assert not Path(service.pua_map_path).exists()
+    loaded = service.ensure_pua_map()
+
+    assert loaded == existing
+    assert service.pua_map == existing

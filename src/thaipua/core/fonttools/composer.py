@@ -4,20 +4,29 @@
 shifted by the consonant's advance width (`dx = cons_advance`, `dy = 0`), preserving the
 source font's vertical mark placement. Per-axis offsets and snap deltas from
 `PlacementSettings` layer on top of that base — the offset tiering lives in
-`ConsonantSettings.offset_for`, the snap math in the `_place_*` methods, the cmap-skip
-guard in `create_composite`, and the read-only preview path in `compose_components`.
+`ConsonantSettings.offset_for`, the snap math in the `_place_*` methods, the
+ownership-aware install in `install_composite`, and the read-only preview path in
+`compose_components`.
+
+`install_composite` replaces glyphs **in place under a stable prefixed name**
+(`thaipua_XXXX`) after consulting `classify_pua_slot`: owned slots are rebuilt freely,
+foreign composites are replaced with an info log, and locked slots (unrecognized
+non-composite content) are skipped and reported via `InstallResult` — no silent drops,
+and callers never need to evict first.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
 from thaipua.core.fonttools.bounding_box import BoundingBox, BoundingBoxCache
+from thaipua.core.fonttools.ownership import TOOL_GLYPH_PREFIX, SlotOwnership, classify_pua_slot
 from thaipua.core.fonttools.settings import (
     ROLE_ABOVE_VOWEL,
     ROLE_BELOW_VOWEL,
@@ -60,12 +69,47 @@ class ComponentPlacement:
     """One resolved composite part: a glyph name and its fontTools 6-tuple affine.
 
     `compose_components` yields these without installing anything, so callers can
-    replay the exact layout `create_composite` would produce (offsets, substitutions,
+    replay the exact layout `install_composite` would produce (offsets, substitutions,
     snaps included) into their own pen or path.
     """
 
     glyph_name: str
     transform: tuple[int, int, int, int, int, int]
+
+
+class InstallStatus(Enum):
+    """Outcome of one `install_composite` call."""
+
+    INSTALLED = "installed"
+    """Fresh install onto a previously unmapped PUA codepoint."""
+
+    REPLACED_OWNED = "replaced_owned"
+    """A prefixed glyph at this slot was rebuilt in place."""
+
+    REPLACED_FOREIGN_COMPOSITE = "replaced_foreign_composite"
+    """An unreferenced foreign composite was replaced."""
+
+    SKIPPED_LOCKED = "skipped_locked"
+    """Slot is locked (unrecognized non-composite content); nothing was written."""
+
+    SKIPPED_MISSING_CONSONANT = "skipped_missing_consonant"
+    """The resolved consonant glyph is absent from the font; nothing was written."""
+
+
+@dataclass(slots=True, frozen=True)
+class InstallResult:
+    """Report of one composite install attempt, surfaced to callers and UI."""
+
+    status: InstallStatus
+    glyph_name: str | None
+
+
+_INSTALL_STATUS_BY_OWNERSHIP: dict[SlotOwnership, InstallStatus] = {
+    SlotOwnership.FREE: InstallStatus.INSTALLED,
+    SlotOwnership.OWNED: InstallStatus.REPLACED_OWNED,
+    SlotOwnership.REPLACEABLE: InstallStatus.REPLACED_FOREIGN_COMPOSITE,
+}
+"""Ownership verdict to install-outcome mapping; LOCKED never reaches an install."""
 
 
 class ThaiPuaFontGenerator:
@@ -350,7 +394,7 @@ class ThaiPuaFontGenerator:
         """Resolve and lay out the `cons_uni` + marks components under `settings`.
 
         Pure read-only computation — resolves substitutions and computes the exact
-        offset/snap placements `create_composite` would install, but returns the
+        offset/snap placements `install_composite` would install, but returns the
         `ComponentPlacement` list instead of touching `glyf`/`hmtx`/`cmap`, so callers
         can replay the layout into their own pen or path for any codepoint without
         mutating the font. `settings=None` uses the generator's current settings.
@@ -415,49 +459,76 @@ class ThaiPuaFontGenerator:
             )
         return components
 
-    def create_composite(
-        self, pua_code: int, cons_uni: int, below_uni: int | None, above_uni: int | None, tone_uni: int | None
-    ) -> None:
-        """Build and install a composite PUA glyph from consonant, vowel, and tone parts.
+    def install_composite(
+        self,
+        pua_code: int,
+        cons_uni: int,
+        below_uni: int | None = None,
+        above_uni: int | None = None,
+        tone_uni: int | None = None,
+        *,
+        settings: PlacementSettings | None = None,
+    ) -> InstallResult:
+        """Resolve, assemble, and install a composite PUA glyph at `pua_code`.
 
-        Resolves glyphs via the per-consonant `glyph_substitutions` overrides (gated on
-        the cluster's present mark roles), then lays them out via `compose_components`
-        and writes the assembled glyph to `glyf`/`hmtx`/`cmap` at `pua_code`, copying
-        the consonant's advance width.
+        The slot's current occupant is classified via `classify_pua_slot`:
 
-        A `pua_code` already mapped in the font's cmap — pre-existing or installed
-        earlier this run — is left untouched (logged as a warning). A missing consonant
-        glyph is likewise skipped.
+        - FREE / OWNED / REPLACEABLE slots proceed; the composite is installed under
+          the stable prefixed name `thaipua_XXXX`, **replacing any existing glyph in
+          place** — the glyph order entry and cmap mapping stay intact across rebuilds,
+          so anything referencing the previous glyph by name keeps resolving.
+        - LOCKED slots (unrecognized non-composite content, dangling cmap entries, or
+          non-glyf fonts) are skipped and reported as `InstallStatus.SKIPPED_LOCKED`;
+          nothing is written.
+        - A missing consonant glyph yields `SKIPPED_MISSING_CONSONANT`.
+
+        Returns an `InstallResult` describing exactly what happened; callers surface
+        skip statuses rather than discovering them from logs. `settings=None` uses the
+        generator's current settings.
         """
-        existing_glyph = self._cmap.get(pua_code)
-        if existing_glyph is not None:
+        existing = self._cmap.get(pua_code)
+        ownership = classify_pua_slot(existing, self.font.get("glyf"))
+        if ownership is SlotOwnership.LOCKED:
             logger.warning(
-                "[SKIP-OWNED] U+%04X: codepoint already mapped to glyph '%s'; not overwriting an in-use PUA slot",
+                "[LOCKED] U+%04X: mapped to '%s' (unrecognized content); slot not overwritten",
                 pua_code,
-                existing_glyph,
+                existing,
             )
-            return
-        components = self.compose_components(cons_uni, below_uni, above_uni, tone_uni, pua_code=pua_code)
+            return InstallResult(InstallStatus.SKIPPED_LOCKED, existing)
+        components = self.compose_components(
+            cons_uni, below_uni, above_uni, tone_uni, settings=settings, pua_code=pua_code
+        )
         if components is None:
-            return
+            return InstallResult(InstallStatus.SKIPPED_MISSING_CONSONANT, None)
         pen = TTGlyphPen(self.font.getGlyphSet())
         for placement in components:
             pen.addComponent(placement.glyph_name, placement.transform)
         new_glyph = pen.glyph()
         new_glyph.recalcBounds(self.font["glyf"])
-        new_glyph_name = f"uni{pua_code:04X}"
-        self._install_composite_glyph(new_glyph_name, new_glyph, pua_code, width_from=components[0].glyph_name)
+        glyph_name = f"{TOOL_GLYPH_PREFIX}{pua_code:04X}"
+        self._install_composite_glyph(glyph_name, new_glyph, pua_code, width_from=components[0].glyph_name)
         parts = [components[0].glyph_name] + [f"+{c.glyph_name}" for c in components[1:]]
-        logger.info("[OK] U+%04X = %s", pua_code, " ".join(parts))
+        status = _INSTALL_STATUS_BY_OWNERSHIP[ownership]
+        if ownership is SlotOwnership.REPLACEABLE:
+            logger.info(
+                "[REPLACE-FOREIGN] U+%04X: replaced foreign composite '%s' with '%s'", pua_code, existing, glyph_name
+            )
+        else:
+            logger.info("[OK] U+%04X = %s (%s)", pua_code, " ".join(parts), glyph_name)
+        return InstallResult(status, glyph_name)
 
-    def _install_composite_glyph(self, glyph_name: str, glyph: Any, unicode_point: int, width_from: str) -> None:
+    def _install_composite_glyph(self, glyph_name: str, glyph: Any, unicode_point: int, width_from: str) -> bool:
         """Register `glyph` under `glyph_name` in `glyf`, `hmtx`, `cmap`, and the glyph-name set.
 
-        Appends `glyph_name` to the glyph order when new, copies the advance width from
-        `width_from` (using the LSB from the glyph's own `xMin`), and maps
-        `unicode_point` on every Unicode cmap subtable.
+        Appends `glyph_name` to the glyph order when new, otherwise replaces the stored
+        glyph object in place (same name → GSUB/GPOS references remain valid). Copies
+        the advance width from `width_from` (using the LSB from the glyph's own
+        `xMin`), maps `unicode_point` on every Unicode cmap subtable, and invalidates
+        the bounding-box cache so stale geometry is never served. Returns `True` when
+        an existing glyph was replaced.
         """
-        if glyph_name not in self._glyph_names:
+        replaced = glyph_name in self._glyph_names
+        if not replaced:
             order = self.font.getGlyphOrder()
             order.append(glyph_name)
             self.font.setGlyphOrder(order)
@@ -470,3 +541,13 @@ class ThaiPuaFontGenerator:
             if table.isUnicode():
                 table.cmap[unicode_point] = glyph_name
         self._cmap[unicode_point] = glyph_name
+        self.bbox.invalidate(glyph_name)
+        return replaced
+
+
+__all__ = [
+    "ComponentPlacement",
+    "InstallResult",
+    "InstallStatus",
+    "ThaiPuaFontGenerator",
+]
