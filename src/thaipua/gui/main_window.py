@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from fontTools.ttLib import TTLibError
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QCloseEvent, QFont, QFontDatabase, QPainterPath
+from PySide6.QtGui import QCloseEvent, QPainterPath
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -75,7 +75,6 @@ class MainWindow(QMainWindow):
         self._state = AppState()
         self._service = FontService()
         self._pua_index: dict[int, CompositeSpec] = {}
-        self._qfont: QFont | None = None
         self._current_category: MarkCategory | None = None
         self._sub_catalog: dict[str, list[GlyphSubstitution]] = {}
         self._settings_generation = 0
@@ -162,8 +161,6 @@ class MainWindow(QMainWindow):
         self._state.consonants_page = 0
         self._state.pua_page = 0
         self._state.dirty = False
-        self._qfont = self._qfont_from_path(path)
-        self._grid_pane.set_loaded_font(self._qfont)
         self._grid_pane.set_font_loaded(True)
         self._toolbar.set_font_loaded(True)
         self._refresh_grid_pane()
@@ -394,7 +391,7 @@ class MainWindow(QMainWindow):
         both `codepoint` and `cons_uni`, with `present_roles` from the PUA spec (or
         empty when only the consonant page is active); mark roles use the spec's mark
         codepoint, `spec.cons_uni`, and the spec's present roles (requiring a selected
-        PUA glyph).         `conditions` is canonicalized per codepoint category
+        PUA glyph). `conditions` is canonicalized per codepoint category
         (`context_canonicalizer`): a tone-mark codepoint merges the below-vowel family
         with the tone-only family; an ascender-protruding consonant (e.g. ฬ) merges every
         above-stack context (`above_vowel` and/or `tone_mark`, with or without a below
@@ -560,7 +557,15 @@ class MainWindow(QMainWindow):
         page = self._state.consonants_page
         start = page * GRID_PAGE_SIZE
         slice_items = cons[start : start + GRID_PAGE_SIZE]
-        visuals = [CellVisual(key=cp, display_text=chr(cp), subtitle=f"U+{cp:04X}") for cp in slice_items]
+        visuals = []
+        for cp in slice_items:
+            path: QPainterPath | None = None
+            if self._service.is_loaded:
+                cell_path = QPainterPath()
+                self._service.render_glyph(cp, cell_path)
+                if not cell_path.isEmpty():
+                    path = cell_path
+            visuals.append(CellVisual(key=cp, display_text=chr(cp), subtitle=f"U+{cp:04X}", path=path))
         self._grid_pane.show_consonants(visuals, page_index=page, total_pages=total_pages)
 
     def _show_pua_page(self) -> None:
@@ -591,16 +596,6 @@ class MainWindow(QMainWindow):
     def _refresh_footer(self) -> None:
         self._status_bar.set_font(self._state.font_path)
         self._status_bar.set_dirty(self._state.dirty)
-
-    def _qfont_from_path(self, path: str) -> QFont | None:
-        """Register the font with `QFontDatabase` and return its first family as a `QFont`."""
-        family_id = QFontDatabase.addApplicationFont(path)
-        if family_id == -1:
-            return None
-        families = QFontDatabase.applicationFontFamilies(family_id)
-        if not families:
-            return None
-        return QFont(families[0])
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Prompt to save unsaved edits before closing; allow cancel via the prompt."""

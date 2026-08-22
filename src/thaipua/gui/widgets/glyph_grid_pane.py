@@ -28,8 +28,9 @@ class CellVisual:
     """One grid cell's displayable content.
 
     `key` is a consonant codepoint on the index page or a PUA codepoint on the variant
-    page. `path` carries a pre-composed `QPainterPath` (offsets/substitutions/snaps
-    already applied) for PUA cells; `None` falls back to rendering `display_text`.
+    page. `path` carries a pre-rendered `QPainterPath` — the loaded glyph outlines for a
+    consonant, or the composed composite (offsets/substitutions/snaps applied) for a PUA
+    variant; `None` falls back to rendering `display_text`.
     """
 
     key: int
@@ -41,9 +42,10 @@ class CellVisual:
 class _GlyphSurface(QWidget):
     """Cell artwork area painting either a composed glyph path or plain text.
 
-    A PUA cell paints its `QPainterPath` scaled to fit the widget (y axis flipped, like
-    the preview viewport); a consonant cell paints `display_text` with the loaded font.
-    Colors are read from the active theme palette at paint time.
+    A cell with a `QPainterPath` paints it scaled to fit the widget (y axis flipped,
+    like the preview viewport) — both pages supply paths when a font is loaded; a cell
+    without one paints `display_text` with the loaded font. Colors are read from the
+    active theme palette at paint time.
     """
 
     def __init__(self, parent: QWidget | None) -> None:
@@ -60,17 +62,6 @@ class _GlyphSurface(QWidget):
         """Swap the painted content to `path` (or `text` when `path` is `None`)."""
         self._text = text
         self._path = path
-        self.update()
-
-    def set_font(self, font: QFont | None) -> None:
-        """Apply `font` (or the default sans-serif fallback) to text painting."""
-        if font is None:
-            self._font = QFont("Tahoma", 24)
-            self._font.setStyleHint(QFont.StyleHint.SansSerif)
-        else:
-            sized = QFont(font)
-            sized.setPointSize(26)
-            self._font = sized
         self.update()
 
     def paintEvent(self, event: QPaintEvent) -> None:
@@ -148,10 +139,6 @@ class _GlyphCell(QFrame):
             self._small.setText("")
         self._refresh_style()
 
-    def set_big_font(self, font: QFont | None) -> None:
-        """Apply `font` (or a default sans-serif fallback) to the cell artwork."""
-        self._art.set_font(font)
-
     def set_subtitle_font(self, font: QFont) -> None:
         """Apply `font` to the subtitle (a monospace family is passed by callers)."""
         self._small.setFont(font)
@@ -228,7 +215,6 @@ class GlyphGridPane(QWidget):
         super().__init__(parent)
         self._mode = "consonant"
         self._cells: list[_GlyphCell] = []
-        self._loaded_font: QFont | None = None
         self._subtitle_font = QFont("Consolas", 8)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -271,7 +257,6 @@ class GlyphGridPane(QWidget):
         for row in range(GRID_ROWS):
             for col in range(GRID_COLUMNS):
                 cell = _GlyphCell(None, self._grid_holder)
-                cell.set_big_font(self._loaded_font)
                 cell.set_subtitle_font(self._subtitle_font)
                 cell.cell_clicked.connect(self._on_cell_clicked)
                 self._grid.addWidget(cell, row, col)
@@ -300,12 +285,6 @@ class GlyphGridPane(QWidget):
         self._prev_btn.clicked.connect(self.prev_page_requested)
         self._next_btn.clicked.connect(self.next_page_requested)
         return bar
-
-    def set_loaded_font(self, font: QFont | None) -> None:
-        """Set the font used by every cell's big visual; updates live on refresh."""
-        self._loaded_font = font
-        for cell in self._cells:
-            cell.set_big_font(font)
 
     def set_font_loaded(self, loaded: bool) -> None:
         """Toggle grid-cell interactivity on font availability.
