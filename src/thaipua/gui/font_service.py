@@ -206,6 +206,31 @@ class FontService:
         width, _lsb = self._gen.font["hmtx"][glyph_name]
         return int(width)
 
+    def display_extents(self) -> tuple[float, float]:
+        """Return the font's (ascent, descent) line box in font units for uniform glyph scaling.
+
+        Prefers typo metrics with hhea fallback so glyphs stay optically large;
+        mark stacks exceeding the box are clamped per cell at paint time.
+        Returns (0, 0) without a font.
+        """
+        if self._gen is None or self._gen.font is None:
+            return (0.0, 0.0)
+        font = self._gen.font
+        upem = _units_per_em(font)
+        os2 = font.get("OS/2")
+        hhea = font.get("hhea")
+        ascent = max(
+            abs(_coerce_int_field(os2, "sTypoAscender")),
+            abs(_coerce_int_field(hhea, "ascent")),
+            upem * 4 // 5,
+        )
+        descent = max(
+            abs(_coerce_int_field(os2, "sTypoDescender")),
+            abs(_coerce_int_field(hhea, "descent")),
+            upem // 5,
+        )
+        return (float(ascent), float(descent))
+
     def render_glyph(self, codepoint: int, path: PathLike, spec: CompositeSpec | None = None) -> GlyphRender:
         """Draw a codepoint's installed glyph into `path` and return its metrics.
 

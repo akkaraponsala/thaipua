@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QEnterEvent, QFont, QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPen
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
@@ -14,7 +14,7 @@ from thaipua.gui.state import GRID_COLUMNS, GRID_ROWS
 
 GridMode = Literal["consonant", "pua"]
 
-_CELL_ART_MARGIN_PX = 8
+_CELL_ART_MARGIN_PX = 5
 
 
 @dataclass(slots=True)
@@ -25,6 +25,8 @@ class CellVisual:
     display_text: str
     subtitle: str
     path: QPainterPath | None = None
+    ref_ascent: float = 0.0
+    ref_descent: float = 0.0
 
 
 class _GlyphSurface(QWidget):
@@ -35,19 +37,35 @@ class _GlyphSurface(QWidget):
         super().__init__(parent)
         self._text = ""
         self._path: QPainterPath | None = None
+        self._ref_ascent = 0.0
+        self._ref_descent = 0.0
         self._font = QFont("Tahoma", 24)
         self._font.setStyleHint(QFont.StyleHint.SansSerif)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-    def set_content(self, text: str, path: QPainterPath | None) -> None:
+    def set_content(
+        self, text: str, path: QPainterPath | None, *, ref_ascent: float = 0.0, ref_descent: float = 0.0
+    ) -> None:
         """Swap the painted content to `path` (or `text` when `path` is `None`)."""
         self._text = text
         self._path = path
+        self._ref_ascent = ref_ascent
+        self._ref_descent = ref_descent
         self.update()
 
+    def _uniform_scale(self, rect: QRectF, avail: QRect) -> float:
+        """Return one scale shared by every cell: fit the reference box, clamped by the glyph's own box."""
+        ref_height = self._ref_ascent + self._ref_descent
+        scale = avail.height() / ref_height if ref_height > 0.0 else float("inf")
+        if rect.height() > 0:
+            scale = min(scale, avail.height() / rect.height())
+        if rect.width() > 0:
+            scale = min(scale, avail.width() / rect.width())
+        return scale
+
     def paintEvent(self, event: QPaintEvent) -> None:
-        """Paint the composed path (scaled to fit) or the text label."""
+        """Paint the composed path at the shared optical size (centered), or the text label."""
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -60,12 +78,12 @@ class _GlyphSurface(QWidget):
             avail = self.rect().adjusted(margin, margin, -margin, -margin)
             if avail.width() <= 0 or avail.height() <= 0:
                 return
-            scale = min(avail.width() / rect.width(), avail.height() / rect.height())
-            painter.translate(self.rect().center().x(), self.rect().center().y())
-            painter.scale(scale, -scale)
-            painter.translate(-rect.center().x(), -rect.center().y())
+            scale = self._uniform_scale(rect, avail)
             painter.setPen(QPen(QColor(palette.GLYPH_PEN), 1.0 / scale))
             painter.setBrush(palette.GLYPH_FILL)
+            painter.translate(avail.center().x(), avail.center().y())
+            painter.scale(scale, -scale)
+            painter.translate(-rect.center().x(), -rect.center().y())
             painter.drawPath(self._path)
         elif self._text:
             painter.setFont(self._font)
@@ -112,7 +130,12 @@ class _GlyphCell(QFrame):
         self._selected = False
         self._pressed = False
         if visual is not None:
-            self._art.set_content(visual.display_text, visual.path)
+            self._art.set_content(
+                visual.display_text,
+                visual.path,
+                ref_ascent=visual.ref_ascent,
+                ref_descent=visual.ref_descent,
+            )
             self._small.setText(visual.subtitle)
         else:
             self._art.set_content("", None)

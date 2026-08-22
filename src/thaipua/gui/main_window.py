@@ -480,6 +480,7 @@ class MainWindow(QMainWindow):
         page = self._state.consonants_page
         start = page * GRID_PAGE_SIZE
         slice_items = cons[start : start + GRID_PAGE_SIZE]
+        ref_ascent, ref_descent = self._service.display_extents() if self._service.is_loaded else (0.0, 0.0)
         visuals = []
         for cp in slice_items:
             path: QPainterPath | None = None
@@ -488,7 +489,16 @@ class MainWindow(QMainWindow):
                 self._service.render_glyph(cp, cell_path)
                 if not cell_path.isEmpty():
                     path = cell_path
-            visuals.append(CellVisual(key=cp, display_text=chr(cp), subtitle=f"U+{cp:04X}", path=path))
+            visuals.append(
+                CellVisual(
+                    key=cp,
+                    display_text=chr(cp),
+                    subtitle=f"U+{cp:04X}",
+                    path=path,
+                    ref_ascent=ref_ascent,
+                    ref_descent=ref_descent,
+                )
+            )
         self._grid_pane.show_consonants(visuals, page_index=page, total_pages=total_pages)
 
     def _show_pua_page(self) -> None:
@@ -502,6 +512,7 @@ class MainWindow(QMainWindow):
         page = self._state.pua_page
         start = page * GRID_PAGE_SIZE
         slice_specs = specs[start : start + GRID_PAGE_SIZE]
+        ref_ascent, ref_descent = self._service.display_extents() if self._service.is_loaded else (0.0, 0.0)
         visuals = []
         for spec in slice_specs:
             path: QPainterPath | None = None
@@ -510,7 +521,14 @@ class MainWindow(QMainWindow):
                 if self._service.render_composite_path(spec, self._state.settings, cell_path) is not None:
                     path = cell_path
             visuals.append(
-                CellVisual(key=spec.pua_code, display_text=spec.thai_key, subtitle=f"U+{spec.pua_code:04X}", path=path)
+                CellVisual(
+                    key=spec.pua_code,
+                    display_text=spec.thai_key,
+                    subtitle=f"U+{spec.pua_code:04X}",
+                    path=path,
+                    ref_ascent=ref_ascent,
+                    ref_descent=ref_descent,
+                )
             )
         self._grid_pane.show_pua(visuals, consonant_label=chr(cons_uni), page_index=page, total_pages=total_pages)
         if self._state.active_pua_code is not None:
