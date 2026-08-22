@@ -42,6 +42,7 @@ from typing import Any, overload
 from thaipua.core.fonttools.specs import ABOVE_VOWELS, BELOW_VOWELS, CONSONANT_PROTRUSION, THAI_CONSONANTS, TONE_MARKS
 
 logger = logging.getLogger(__name__)
+
 SETTINGS_VERSION: int = 1
 _CODEPOINT_RE: re.Pattern[str] = re.compile("^[Uu]\\+([0-9A-Fa-f]{1,6})$")
 _COMBO_CODEPOINT_RE: re.Pattern[str] = re.compile("[Uu]\\+([0-9A-Fa-f]{1,6})")
@@ -136,10 +137,10 @@ class ConsonantSettings:
 
     Glyph substitutions are keyed by the substituted codepoint (the consonant's own for
     a self-substitution, or a mark codepoint for a mark stacked on this consonant).
-    Placement offsets layer the per-glyph tiers on top of the base tier: a placed mark
-    resolves as `(mark_offsets[role][mark] or Offset(0, 0)) + (combo_offsets[combo_key][role] or Offset(0, 0))`
-    plus `(base_offsets[role] or Offset(0, 0))` (see `offset_for`). The combo tier is
-    additive on top of the generic mark tier, so the final position is generic + combo + base.
+    Placement offsets resolve per cluster shape: a single-mark cluster reads
+    `(mark_offsets[role][mark] or Offset(0, 0)) + (base_offsets[role] or
+    Offset(0, 0))`; a multi-mark cluster reads `(combo_offsets[combo_key][role] or
+    Offset(0, 0)) + (base_offsets[role] or Offset(0, 0))` (see `offset_for`).
     """
 
     base_offsets: dict[str, Offset] = field(default_factory=dict)
@@ -151,12 +152,14 @@ class ConsonantSettings:
     def offset_for(
         self, role: str, *, mark_uni: int | None, combo_key: str | None, base_role: str | None = None
     ) -> Offset:
-        """Resolve the placement offset for `role` by layering the per-glyph tiers.
+        """Resolve the placement offset for `role`.
 
-        `base_role`, when given and present in `base_offsets`, overrides `role` for the
-        base tier — the composer passes `ROLE_TONE_MARK_ON_ABOVE_VOWEL` for a tone mark
-        stacked on an above vowel so that stack gets its own independent base offset. The
-        tier-precedence formula is documented on `ConsonantSettings`.
+        The per-glyph tier is chosen by cluster shape (`_per_glyph_offset`): single-mark
+        clusters read the mark tier, multi-mark clusters the combo tier; the base tier
+        adds on top in both cases. `base_role`, when given and present in
+        `base_offsets`, overrides `role` for the base tier — the composer passes
+        `ROLE_TONE_MARK_ON_ABOVE_VOWEL` for a tone mark stacked on an above vowel so
+        that stack gets its own independent base offset.
         """
         specific = self._per_glyph_offset(role, mark_uni=mark_uni, combo_key=combo_key)
         base_key = base_role if base_role is not None and base_role in self.base_offsets else role
@@ -165,24 +168,20 @@ class ConsonantSettings:
     def _per_glyph_offset(self, role: str, *, mark_uni: int | None, combo_key: str | None) -> Offset:
         """Return the per-glyph tier offset for `role`, or `Offset(0, 0)` when unset.
 
-        Both tiers are additive: generic `mark_offsets[role][mark_uni]` and specific
-        `combo_offsets[combo_key][role]` (when present) are summed, so the final
-        position is generic + combo + base.
+        Multi-mark clusters (`combo_key` given) read `combo_offsets[combo_key][role]`;
+        single-mark clusters (`combo_key=None`) read `mark_offsets[role][mark_uni]`.
         """
-        total = Offset()
-        if mark_uni is not None:
-            group = self.mark_offsets.get(role)
-            if group is not None:
-                off = group.get(mark_uni)
-                if off is not None:
-                    total = total + off
         if combo_key is not None:
             combo = self.combo_offsets.get(combo_key)
-            if combo is not None:
-                off = combo.get(role)
-                if off is not None:
-                    total = total + off
-        return total
+            if combo is None:
+                return _ZERO_OFFSET
+            return combo.get(role) or _ZERO_OFFSET
+        if mark_uni is None:
+            return _ZERO_OFFSET
+        group = self.mark_offsets.get(role)
+        if group is None:
+            return _ZERO_OFFSET
+        return group.get(mark_uni) or _ZERO_OFFSET
 
     def snap_for(self, snap_name: str) -> SnapConfig | None:
         return self.snap_configs.get(snap_name)
@@ -735,7 +734,7 @@ def _combo_offsets_to_dict(combo_offsets: dict[str, dict[str, Offset]]) -> dict[
 
     Combination keys are emitted as `U+XXXX` codepoints joined by `+` (in canonical
     ascending-codepoint order, matching the in-memory key form). Zero deltas are
-    omitted — they mean no combo-specific addition (pure inheritance).
+    omitted — they mean no combo-specific override (base-only placement).
     """
     out: dict[str, dict[str, dict[str, int]]] = {}
     for combo_key in sorted(combo_offsets):

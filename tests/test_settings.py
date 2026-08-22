@@ -1,4 +1,4 @@
-"""Unit tests for `ConsonantSettings.offset_for` tier layering and substitution matching."""
+"""Unit tests for `ConsonantSettings.offset_for` tier resolution and substitution matching."""
 
 from __future__ import annotations
 
@@ -586,27 +586,34 @@ def test_load_fractional_offset_coerces_to_zero(tmp_path: Path) -> None:
     assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
 
 
-def test_mark_and_combo_offsets_are_additive() -> None:
+def test_combo_cluster_resolves_from_combo_tier() -> None:
     combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
     cs = ConsonantSettings(
         mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
         combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
     )
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(15, 15)
+    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(5, -5)
     assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(10, 20)
 
 
-def test_mark_and_combo_and_base_are_additive() -> None:
+def test_combo_cluster_without_entry_resolves_to_zero() -> None:
+    combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
+    cs = ConsonantSettings(mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}})
+    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset()
+
+
+def test_combo_and_base_offsets_stack() -> None:
     combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
     cs = ConsonantSettings(
         base_offsets={ROLE_TONE_MARK: Offset(1, 1)},
         mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
         combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
     )
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(16, 16)
+    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(6, -4)
+    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(11, 21)
 
 
-def test_state_mark_and_combo_additive_via_state_helpers() -> None:
+def test_state_single_and_combo_offsets_are_independent() -> None:
     from thaipua.core.fonttools.specs import CompositeSpec
     from thaipua.gui.state import MarkCategory, apply_offset, current_mark_offset
 
@@ -619,12 +626,22 @@ def test_state_mark_and_combo_additive_via_state_helpers() -> None:
     apply_offset(spec_base, settings, 10, 20, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(10, 20)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
-    apply_offset(spec_combo, settings, 5, -5, category=MarkCategory.ABOVE_VOWEL)
-    assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
     cs = settings.for_consonant(cons)
-    assert cs.offset_for(ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}") == Offset(15, 15)
-    apply_offset(spec_base, settings, 0, 0, category=MarkCategory.ABOVE_VOWEL)
-    assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
+    assert cs.offset_for(ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}") == Offset()
+    apply_offset(spec_combo, settings, 5, -5, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
     cs2 = settings.for_consonant(cons)
     assert cs2.offset_for(ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}") == Offset(5, -5)
+    apply_offset(spec_base, settings, 0, 0, category=MarkCategory.ABOVE_VOWEL)
+    assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
+    assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
+
+
+def test_composer_combo_key_requires_two_marks() -> None:
+    from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
+
+    assert ThaiPuaFontGenerator._combo_key(None, VOWEL_MAI_HAN_AKAT, None) is None
+    assert (
+        ThaiPuaFontGenerator._combo_key(None, VOWEL_MAI_HAN_AKAT, TONE_MAI_EK)
+        == f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
+    )

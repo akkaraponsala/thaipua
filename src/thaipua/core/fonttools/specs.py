@@ -23,6 +23,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
 THAI_CONSONANTS: set[int] = {ord(c) for c in "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"}
 BELOW_VOWELS: set[int] = {3640, 3641}
 ABOVE_VOWELS: set[int] = {3633, 3636, 3661, 3637, 3638, 3655, 3639}

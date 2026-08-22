@@ -68,6 +68,7 @@ from thaipua.gui.state import (
 if TYPE_CHECKING:
     from thaipua.core.fonttools.alternates import GlyphSubstitution
     from thaipua.core.fonttools.specs import CompositeSpec
+
 OFFSET_MIN = -1000
 OFFSET_MAX = 1000
 OFFSET_DEFAULT = 0
@@ -430,7 +431,7 @@ class ControlsPane(QWidget):
     ) -> None:
         """Populate Base Offsets / Consonant Substitution / Snap Configs for `cons_uni`.
 
-        The Consonant-role combo is populated now (its codepoint is `cons_uni`); the
+        The Consonant-role combo is populated here (its codepoint is `cons_uni`); the
         mark-role combos are reset to "(no override)" and disabled until
         `load_spec_mark_substitutions` (which knows the specific mark codepoint). All
         widgets are signal-blocked during the reload to prevent live commits. A stored

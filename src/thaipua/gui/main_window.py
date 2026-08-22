@@ -57,7 +57,9 @@ from thaipua.gui.widgets.top_toolbar import TopToolbar
 
 if TYPE_CHECKING:
     from thaipua.core.fonttools.alternates import GlyphSubstitution
+
 logger = logging.getLogger(__name__)
+
 FONT_FILTER = "Font files (*.ttf *.otf);;All files (*.*)"
 TEXT_FILTER = "Text / string-table files (*.txt *.strings *.dlstrings *.ilstrings);;All files (*.*)"
 

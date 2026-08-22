@@ -43,6 +43,7 @@ from thaipua.core.fonttools.specs import THAI_CONSONANTS, CompositeSpec, iter_co
 
 if TYPE_CHECKING:
     from thaipua.core.fonttools.alternates import GlyphSubstitution
+
 GRID_COLUMNS = 6
 GRID_ROWS = 6
 GRID_PAGE_SIZE = GRID_COLUMNS * GRID_ROWS
@@ -132,11 +133,14 @@ def infer_category(spec: CompositeSpec) -> MarkCategory | None:
 def combo_key_for(spec: CompositeSpec) -> str | None:
     """Return the canonical combination key for `spec`'s marks.
 
-    Marks are sorted ascending by codepoint and concatenated; `None` is returned for
-    consonant-only specs so callers can short-circuit combination lookups (matching
-    `ThaiPuaFontGenerator._combo_key` exactly).
+    Marks are sorted ascending by codepoint and concatenated; multi-mark specs (two or
+    more marks) yield their combo key, everything else yields `None` so callers can
+    short-circuit combination lookups (matching `ThaiPuaFontGenerator._combo_key`
+    exactly).
     """
     cps = [c for c in [spec.below_uni, spec.above_uni, spec.tone_uni] if c]
+    if len(cps) < 2:
+        return None
     return combo_key_from_codepoints(cps)
 
 
@@ -187,8 +191,7 @@ def current_mark_offset(spec: CompositeSpec, settings: PlacementSettings, *, cat
     """Resolve the per-glyph Mark Offset override for `spec`, *ignoring* `base_offsets`.
 
     Single-mark glyphs return the generic `mark_offsets[role][mark]`; multi-mark glyphs
-    return the combo-specific `combo_offsets[combo_key][role]` additive delta. The
-    composer sums the tiers so the final position is generic + combo + base.
+    return their own `combo_offsets[combo_key][role]`.
     """
     resolved = category if category is not None else infer_category(spec)
     if resolved is None:
@@ -219,10 +222,10 @@ def apply_offset(
 ) -> None:
     """Commit an `(x, y)` offset for `spec` into `settings` (mutates in place).
 
-    Single-mark glyphs write the generic `mark_offsets[role][mark_uni]`; multi-mark glyphs
-    write the additive delta `combo_offsets[combo_key][role]`. The final position is
-    generic + combo + base. A zero delta clears the combo entry to restore pure
-    inheritance. `settings.consonants` is auto-seeded when absent.
+    Single-mark glyphs write the generic `mark_offsets[role][mark_uni]`; multi-mark
+    glyphs write `combo_offsets[combo_key][role]`. A zero delta clears the entry so
+    the cluster resolves to base-only placement. `settings.consonants` is auto-seeded
+    when absent.
     """
     resolved = category if category is not None else infer_category(spec)
     if resolved is None:

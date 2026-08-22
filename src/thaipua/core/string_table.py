@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Literal
 
 logger = logging.getLogger(__name__)
+
 FileType = Literal["zstring", "length_prefixed"]
 _LENGTH_PREFIXED_EXTS = {".DLSTRINGS", ".ILSTRINGS"}
 _ZSTRING_EXTS = {".STRINGS"}

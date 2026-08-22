@@ -15,7 +15,9 @@ from fontTools.pens.boundsPen import BoundsPen
 
 if TYPE_CHECKING:
     from fontTools.ttLib import TTFont
+
 logger = logging.getLogger(__name__)
+
 BoundingBoxTuple = tuple[int, int, int, int]
 
 

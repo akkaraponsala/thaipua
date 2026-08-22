@@ -154,11 +154,12 @@ class ThaiPuaFontGenerator:
     def _combo_key(below_uni: int | None, above_uni: int | None, tone_uni: int | None) -> str | None:
         """Return the canonical cluster-key for `combo_offsets` lookups.
 
-        The cluster key is the cluster's mark characters concatenated in ascending-
-        codepoint order, so settings overrides apply to a specific mark set regardless
-        of the user's input ordering. Returns `None` when the cluster has no marks.
+        Multi-mark clusters (two or more marks) key into `combo_offsets`; single-mark
+        clusters return `None` and resolve from `mark_offsets[role][mark]`.
         """
         cps = [c for c in [below_uni, above_uni, tone_uni] if c]
+        if len(cps) < 2:
+            return None
         return combo_key_from_codepoints(cps)
 
     def resolve_consonant(
@@ -351,7 +352,7 @@ class ThaiPuaFontGenerator:
         `dy` + `gap`) when `tone_mark_to_above_vowel` is on. Otherwise base Y is `0`.
         When stacked, the base-offset fallback tier resolves against
         `ROLE_TONE_MARK_ON_ABOVE_VOWEL` so the stack gets an independent base offset.
-        Combo/mark overrides still key on `ROLE_TONE_MARK`.
+        Combo/mark overrides key on `ROLE_TONE_MARK`.
         """
         base_role = ROLE_TONE_MARK_ON_ABOVE_VOWEL if above_placement is not None else None
         offset = cons_settings.offset_for(ROLE_TONE_MARK, mark_uni=tone_uni, combo_key=combo_key, base_role=base_role)

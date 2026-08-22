@@ -15,6 +15,7 @@ from thaipua.core.constants import DEFAULT_PUA_MAP_PATH, PUA_RANGE_END, PUA_RANG
 from thaipua.core.encoding import load_pua_map_dict
 
 logger = logging.getLogger(__name__)
+
 THAI_CONSONANTS: str = "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"
 THAI_SUFFIXES: list[str] = [
     "ั",
