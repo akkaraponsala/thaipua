@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from conftest import FakeGlyf, make_glyf
 
 from thaipua.core.constants import PUA_RANGE_START
 from thaipua.core.fonttools.map_validation import (
@@ -13,37 +13,14 @@ from thaipua.core.fonttools.map_validation import (
 )
 
 
-class _FakeGlyph:
-    """Minimal stand-in for a `glyf` glyph exposing only `isComposite`."""
-
-    def __init__(self, composite: bool) -> None:
-        self._composite = composite
-
-    def isComposite(self) -> bool:
-        return self._composite
-
-
-class _FakeGlyf:
-    """Dict-like stand-in for a `glyf` table keyed by glyph name."""
-
-    def __init__(self, glyphs: dict[str, _FakeGlyph]) -> None:
-        self._glyphs = glyphs
-
-    def __contains__(self, name: str) -> bool:
-        return name in self._glyphs
-
-    def __getitem__(self, name: str) -> _FakeGlyph:
-        return self._glyphs[name]
-
-
 def _context(
     cmap: dict[int, str] | None = None,
     glyf: dict[str, bool] | None = None,
 ) -> PuaSlotContext:
     """Build a slot context from plain dicts (`None` cmap/glyf means absent)."""
-    glyf_table: Any | None = None
+    glyf_table: FakeGlyf | None = None
     if glyf is not None:
-        glyf_table = _FakeGlyf({name: _FakeGlyph(composite) for name, composite in glyf.items()})
+        glyf_table = make_glyf(**glyf)
     return PuaSlotContext(cmap=cmap or {}, glyf=glyf_table)
 
 

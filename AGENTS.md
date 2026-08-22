@@ -15,6 +15,7 @@ thaipua/
 │   │   │   ├── settings.py           # PlacementSettings / ConsonantSettings, Offset, SnapConfig, SubstitutionRule
 │   │   │   ├── specs.py              # CompositeSpec, THAI_CONSONANTS / BELOW_VOWELS / ABOVE_VOWELS / TONE_MARKS / CONSONANT_PROTRUSION
 │   │   │   ├── ownership.py          # SlotOwnership + classify_pua_slot, TOOL_GLYPH_PREFIX ("thaipua_")
+│   │   │   ├── cff_convert.py        # CFF (.otf) → TrueType in-memory working-copy conversion at load
 │   │   │   ├── map_validation.py     # validate_pua_map → list[PuaMapIssue], slot_context_from_font
 │   │   │   ├── alternates.py         # GSUB discovery: find_glyph_substitutions
 │   │   │   └── bounding_box.py       # BoundingBoxCache
@@ -58,7 +59,8 @@ thaipua/
 
 ### Install Model (slot ownership — no eviction step)
 
-- `composer.install_composite(pua_code, ...)` classifies the target slot via `ownership.classify_pua_slot`: FREE / OWNED / REPLACEABLE proceed; LOCKED (unrecognized non-composite content, dangling cmap entries, non-glyf fonts) returns `InstallStatus.SKIPPED_LOCKED`; missing consonant glyph returns `SKIPPED_MISSING_CONSONANT`. Callers surface skip statuses instead of inferring from logs.
+- CFF sources (.otf) are converted to a TrueType working copy **in memory at load** (`cff_convert.py`, cu2qu); the source file is untouched and Save-Font defaults to `<stem>_pua.ttf`. Installs therefore always target `glyf`.
+- `composer.install_composite(pua_code, ...)` classifies the target slot via `ownership.classify_pua_slot`: FREE / OWNED / REPLACEABLE proceed; LOCKED (unrecognized non-composite content or dangling cmap entries) returns `InstallStatus.SKIPPED_LOCKED`; missing consonant glyph returns `SKIPPED_MISSING_CONSONANT`. Callers surface skip statuses instead of inferring from logs.
 - Composites install under stable names `thaipua_XXXX`, replacing any existing glyph **in place** — glyph order entry and cmap mapping survive rebuilds, so live preview edits never need eviction or glyph-order churn. `_install_composite_glyph` invalidates the bbox cache per write.
 - Nothing touches disk until *Save Font*.
 
@@ -120,7 +122,7 @@ Don't commit these unless intentional. Tests isolate them via explicit `base_dir
 
 ## Testing Guidelines
 
-- Tests live under `tests/test_*.py`: `test_install_composite.py` (integration vs the real `assets/fonts/Sarabun-Regular.ttf`: classification, replace-in-place, locked skips, save/reload prefix persistence), `test_font_service.py` + `test_ownership.py` (duck-typed `_FakeFont`/`glyf` fakes typed with `cast`), plus `test_pua_map.py`, `test_settings.py`, `test_map_validation.py`.
+- Tests live under `tests/test_*.py`: `test_install_composite.py` (integration vs the real `assets/fonts/Sarabun-Regular.ttf`: classification, replace-in-place, locked skips, save/reload prefix persistence), `test_cff_convert.py` (builds a real `.otf` via fontTools `FontBuilder`), `test_font_service.py` + `test_ownership.py` (duck-typed `_FakeFont`/`glyf` fakes typed with `cast`), plus `test_pua_map.py`, `test_settings.py`, `test_map_validation.py`, `test_logging.py`.
 - The PySide6-free layers are unit-testable without `QApplication` — keep it that way. `glyph_pen` uses the `PathLike` duck type so tests use a lightweight recorder.
 - Helpers take explicit paths so tests never touch the repo root — use `tmp_path`.
 - `pytest` already runs with `--cov=src --cov-report=term-missing` via `addopts` — don't add a second coverage invocation.

@@ -146,23 +146,30 @@ class FontService:
         """Open the font at `path` for composite editing.
 
         When `settings` is `None`, a profile is resolved via `resolve_settings_profile`
-        against `profiles_dir` (default `"profiles"`).
+        against `profiles_dir` (default `"profiles"`). A CFF source (.otf) is converted
+        to a TrueType working copy in memory (see
+        `thaipua.core.fonttools.cff_convert`), so installs behave identically for both
+        flavors and the Save-Font default becomes `<stem>_pua.ttf`.
         """
         src = Path(path)
         self._profiles_dir = str(profiles_dir) if profiles_dir is not None else DEFAULT_PROFILES_DIR
         if settings is None:
             resolved = resolve_settings_profile(src, profiles_dir=profiles_dir)
             settings = resolved.settings
-        out_path = self._default_output_path(src)
         self._gen = ThaiPuaFontGenerator(str(src), settings)
         self._src_path = src
-        self._output_path = out_path
-        logger.info("Loaded font %s (output target %s)", src, out_path)
+        self._output_path = self._default_output_path(src, ttf_suffix=self._gen.source_is_cff)
+        logger.info("Loaded font %s (output target %s)", src, self._output_path)
 
     @staticmethod
-    def _default_output_path(src: Path) -> str:
-        """Return the Save-Font default `<stem>_pua.<ext>` beside the source."""
-        return str(src.with_name(f"{src.stem}_pua{src.suffix}"))
+    def _default_output_path(src: Path, *, ttf_suffix: bool = False) -> str:
+        """Return the Save-Font default `<stem>_pua.<ext>` beside the source.
+
+        A CFF source is converted to a TrueType working copy at load time, so its
+        saved output always carries the `.ttf` extension.
+        """
+        suffix = ".ttf" if ttf_suffix else src.suffix
+        return str(src.with_name(f"{src.stem}_pua{suffix}"))
 
     def load_pua_map(self, path: str | Path | None = None) -> dict[str, str]:
         """Read the Thai-to-PUA map from `path` (defaults to the stored path)."""
@@ -301,12 +308,14 @@ class FontService:
         and categorizes each entry by the composer's fixed add order — consonant first,
         then below/above/tone marks in their spec slot order — so roles stay correct
         even when a glyph substitution swapped in an alternate glyph name. `[]` is
-        returned for non-composite glyphs, or when `spec` is `None` (a plain cmap
-        codepoint).
+        returned for non-composite glyphs, glyphs absent from `glyf`, or fonts without
+        a `glyf` table (CFF/OTF outlines carry no component structure).
         """
         if spec is None or self._gen is None or self._gen.font is None:
             return []
-        glyf = self._gen.font["glyf"]
+        glyf = self._gen.font.get("glyf")
+        if glyf is None:
+            return []
         if glyph_name not in glyf:
             return []
         glyph = glyf[glyph_name]

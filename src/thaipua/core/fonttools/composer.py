@@ -26,6 +26,7 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
 from thaipua.core.fonttools.bounding_box import BoundingBox, BoundingBoxCache
+from thaipua.core.fonttools.cff_convert import convert_cff_to_truetype, has_cff_outlines
 from thaipua.core.fonttools.ownership import TOOL_GLYPH_PREFIX, SlotOwnership, classify_pua_slot
 from thaipua.core.fonttools.settings import (
     ROLE_ABOVE_VOWEL,
@@ -117,6 +118,9 @@ class ThaiPuaFontGenerator:
 
     Installs composite PUA glyphs into the font in place; build a fresh instance per
     output font. `compose_components` performs the same layout read-only for preview.
+    A CFF source (.otf) is converted in memory to TrueType quadratic outlines at
+    construction (see `thaipua.core.fonttools.cff_convert`) so both flavors flow
+    through the identical install pipeline; the converted copy saves back as `.ttf`.
     """
 
     def __init__(self, font_path: str, settings: PlacementSettings | None) -> None:
@@ -125,9 +129,13 @@ class ThaiPuaFontGenerator:
         Profile resolution is the caller's responsibility (see
         `thaipua.core.profiles.resolve_settings_profile`). `settings=None` falls back
         to `default_placement_settings()` (pure advance-width composition, no overrides
-        or snaps).
+        or snaps). A CFF source is converted to a TrueType working copy in memory;
+        `source_is_cff` reports whether that conversion happened.
         """
         self.font = TTFont(font_path)
+        self.source_is_cff = has_cff_outlines(self.font)
+        if self.source_is_cff:
+            convert_cff_to_truetype(self.font)
         self.bbox = BoundingBoxCache(self.font)
         self.settings = settings if settings is not None else default_placement_settings()
         self._glyph_names: set[str] = set(self.font.getGlyphOrder())

@@ -7,19 +7,21 @@ from two signals:
   ownership marker that survives font save/load,
 - `glyf` composition — a composite glyph at a PUA slot is presumed to be stacking
   output from a similar tool, while anything else (an unknown simple glyph, a dangling
-  cmap entry, or a non-glyf/CFF font) may be irreplaceable foreign content.
+  cmap entry, or a font with no `glyf` table at all) may be irreplaceable foreign
+  content.
 
 The decision table (see `classify_pua_slot`):
 
-===============  ==========  =========================================
+==============  ==========  =========================================
 Composite        Prefix      Verdict / action on install
-===============  ==========  =========================================
+==============  ==========  =========================================
 (yes implied)    yes         OWNED — replace in place
 yes              no          REPLACEABLE — replace foreign composite
 no               no          LOCKED — unknown simple content, never overwrite
 (any)            no          LOCKED when absent from `glyf` (dangling cmap)
-(no glyf table)  no          LOCKED — CFF/CID fonts are never touched
-===============  ==========  =========================================
+(no glyf table)  no          LOCKED — defensive only; CFF sources are converted
+                             to TrueType quadratics before reaching installs
+==============  ==========  =========================================
 """
 
 from __future__ import annotations
@@ -73,7 +75,8 @@ def classify_pua_slot(cmap_glyph: str | None, glyf: _GlyfLike | None) -> SlotOwn
     """Classify the occupant of a PUA codepoint into a `SlotOwnership` verdict.
 
     `cmap_glyph` is the glyph name mapped at the codepoint (`None` when unmapped) and
-    `glyf` the font's glyf table (`None` when absent, e.g. CFF fonts).
+    `glyf` the font's glyf table (`None` only for fonts lacking one — generator-loaded
+    sources arrive converted, so this guards direct/edge callers).
     """
     if cmap_glyph is None:
         return SlotOwnership.FREE

@@ -6,37 +6,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+from conftest import FakeGlyf, make_glyf
+
 from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
+from thaipua.core.fonttools.specs import CompositeSpec
 from thaipua.gui.font_service import FontService
-
-
-class _FakeGlyph:
-    """Minimal stand-in for a `glyf` glyph exposing only `isComposite`."""
-
-    def __init__(self, composite: bool) -> None:
-        self._composite = composite
-
-    def isComposite(self) -> bool:
-        return self._composite
-
-
-class _FakeGlyf:
-    """Dict-like stand-in for a `glyf` table keyed by glyph name."""
-
-    def __init__(self, glyphs: dict[str, _FakeGlyph]) -> None:
-        self._glyphs = glyphs
-
-    def __contains__(self, name: str) -> bool:
-        return name in self._glyphs
-
-    def __getitem__(self, name: str) -> _FakeGlyph:
-        return self._glyphs[name]
 
 
 class _FakeFont:
     """Duck-typed `TTFont` exposing only `getBestCmap` and `get`."""
 
-    def __init__(self, cmap: dict[int, str], glyf: _FakeGlyf | None = None) -> None:
+    def __init__(self, cmap: dict[int, str], glyf: FakeGlyf | None = None) -> None:
         self._cmap = cmap
         self._glyf = glyf
 
@@ -47,7 +27,7 @@ class _FakeFont:
         return self._glyf if key == "glyf" else None
 
 
-def _service_with_font(cmap: dict[int, str], glyf: _FakeGlyf | None = None) -> FontService:
+def _service_with_font(cmap: dict[int, str], glyf: FakeGlyf | None = None) -> FontService:
     service = FontService()
     service._gen = cast(ThaiPuaFontGenerator, SimpleNamespace(font=_FakeFont(cmap, glyf)))
     return service
@@ -59,7 +39,7 @@ def test_pua_slot_context_is_none_without_a_font() -> None:
 
 def test_pua_slot_context_snapshots_cmap_and_glyf() -> None:
     cmap = {0xE000: "logo", 0x0E01: "ko_kai"}
-    glyf = _FakeGlyf({"logo": _FakeGlyph(False), "ko_kai": _FakeGlyph(False)})
+    glyf = make_glyf(logo=False, ko_kai=False)
     context = _service_with_font(cmap, glyf).pua_slot_context()
     assert context is not None
     assert context.cmap == cmap
@@ -69,6 +49,13 @@ def test_pua_slot_context_snapshots_cmap_and_glyf() -> None:
 def test_occupied_pua_chars_scans_the_font_cmap() -> None:
     cmap = {0xE000: "a", 0xE001: "b", 0x0E01: "ko_kai"}
     assert _service_with_font(cmap)._occupied_pua_chars() == {chr(0xE000), chr(0xE001)}
+
+
+def test_component_boxes_are_empty_without_a_glyf_table() -> None:
+    """CFF/OTF fonts carry no component structure; a mapped PUA slot still renders."""
+    spec = CompositeSpec(pua_code=0xE000, cons_uni=0x0E01)
+    service = _service_with_font({0xE000: "foreign_glyph"}, glyf=None)
+    assert service._component_boxes("foreign_glyph", spec) == []
 
 
 def test_ensure_pua_map_bootstraps_an_empty_map_and_never_touches_existing(

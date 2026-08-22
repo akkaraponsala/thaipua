@@ -7,7 +7,6 @@ save/reload roundtrip are exercised end to end without PySide6.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -16,18 +15,7 @@ from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
 from thaipua.core.fonttools.composer import InstallResult, InstallStatus, ThaiPuaFontGenerator
 from thaipua.core.fonttools.ownership import TOOL_GLYPH_PREFIX
 
-FONT_PATH = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Sarabun-Regular.ttf"
 KO_KAI = 0x0E01
-
-
-@pytest.fixture
-def generator() -> Iterator[ThaiPuaFontGenerator]:
-    """Yield a generator over the sample font, skipping when the asset is missing."""
-    if not FONT_PATH.exists():
-        pytest.skip(f"sample font missing: {FONT_PATH}")
-    gen = ThaiPuaFontGenerator(str(FONT_PATH), None)
-    yield gen
-    gen.font.close()
 
 
 def _first_free_pua_code(gen: ThaiPuaFontGenerator) -> int:
