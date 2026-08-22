@@ -85,6 +85,7 @@ class _GlyphCell(QFrame):
         self._empty = visual is None
         self._selected = False
         self._hovered = False
+        self._pressed = False
         self.setObjectName("GridCell")
         self.setMinimumSize(76, 76)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -109,6 +110,7 @@ class _GlyphCell(QFrame):
         self._key = visual.key if visual is not None else None
         self._empty = visual is None
         self._selected = False
+        self._pressed = False
         if visual is not None:
             self._art.set_content(visual.display_text, visual.path)
             self._small.setText(visual.subtitle)
@@ -158,17 +160,37 @@ class _GlyphCell(QFrame):
                     f"QLabel {{ color: {palette.TEXT_PRIMARY}; }}"
                 )
             else:
-                bg = palette.BG_GRID_CELL_HOVER if self._hovered else palette.BG_GRID_CELL
+                if self._pressed:
+                    bg = palette.BG_GRID_CELL_SELECTED
+                elif self._hovered:
+                    bg = palette.BG_GRID_CELL_HOVER
+                else:
+                    bg = palette.BG_GRID_CELL
                 self.setStyleSheet(
                     f"QFrame {{ background-color: {bg}; border-radius: 4px; }}"
                     f"QLabel#Subtitle {{ color: {palette.TEXT_DIM}; font-size: 8pt; }}"
                 )
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Emit `cell_clicked(self._key)` on a left-button press; ignore when empty."""
+        """Enter the pressed visual state on a left-button press; emit nothing yet."""
         if self._empty or self._key is None:
             return None
         if event.button() == Qt.MouseButton.LeftButton:
+            self._pressed = True
+            self._refresh_style()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Emit `cell_clicked(self._key)` when a held press ends inside the cell."""
+        if not self._pressed:
+            return None
+        self._pressed = False
+        self._refresh_style()
+        if (
+            not self._empty
+            and self._key is not None
+            and event.button() == Qt.MouseButton.LeftButton
+            and self.rect().contains(event.position().toPoint())
+        ):
             self.cell_clicked.emit(self._key)
 
 
