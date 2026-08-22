@@ -1,10 +1,4 @@
-"""Left pane: the glyph index grid with breadcrumb and pagination.
-
-`GlyphGridPane` renders two contextual pages: the Consonant Page (42 Thai consonants,
-paginated 36 per page) and the PUA Page, the variants of a selected consonant (also 36
-per page). Each 6x6 grid is a `QGridLayout` of `_GlyphCell` frames; click semantics
-follow the current mode (see `_on_cell_clicked`).
-"""
+"""Left pane grid of consonant and PUA variant cells with breadcrumb and pagination."""
 
 from __future__ import annotations
 
@@ -25,13 +19,7 @@ _CELL_ART_MARGIN_PX = 8
 
 @dataclass(slots=True)
 class CellVisual:
-    """One grid cell's displayable content.
-
-    `key` is a consonant codepoint on the index page or a PUA codepoint on the variant
-    page. `path` carries a pre-rendered `QPainterPath` — the loaded glyph outlines for a
-    consonant, or the composed composite (offsets/substitutions/snaps applied) for a PUA
-    variant; `None` falls back to rendering `display_text`.
-    """
+    """Displayable content for one grid cell; `path` takes precedence over `display_text`."""
 
     key: int
     display_text: str
@@ -40,13 +28,7 @@ class CellVisual:
 
 
 class _GlyphSurface(QWidget):
-    """Cell artwork area painting either a composed glyph path or plain text.
-
-    A cell with a `QPainterPath` paints it scaled to fit the widget (y axis flipped,
-    like the preview viewport) — both pages supply paths when a font is loaded; a cell
-    without one paints `display_text` with the loaded font. Colors are read from the
-    active theme palette at paint time.
-    """
+    """Cell artwork painting a glyph path scaled to fit, or fallback text."""
 
     def __init__(self, parent: QWidget | None) -> None:
         """Initialize an empty surface with the fallback sans-serif font."""
@@ -92,7 +74,7 @@ class _GlyphSurface(QWidget):
 
 
 class _GlyphCell(QFrame):
-    """A single borderless grid tile that emits its payload on a left click."""
+    """Clickable grid tile emitting its payload key on left click."""
 
     cell_clicked = Signal(int)
 
@@ -123,11 +105,7 @@ class _GlyphCell(QFrame):
         self._refresh_style()
 
     def rebind(self, visual: CellVisual | None) -> None:
-        """Rebind this existing cell to `visual` (or `None` for an empty slot).
-
-        Reuses the live `_GlyphSurface`/`QLabel` children and `cell_clicked` signal set
-        up at construction so the containing `QGridLayout` keeps its widget identity.
-        """
+        """Swap the cell to new content while keeping widget identity in the grid."""
         self._key = visual.key if visual is not None else None
         self._empty = visual is None
         self._selected = False
@@ -151,14 +129,7 @@ class _GlyphCell(QFrame):
         self._refresh_style()
 
     def enterEvent(self, event: QEnterEvent) -> None:
-        """Highlight the cell on hover (only for clickable, unselected cells).
-
-        Driven manually rather than via a `QFrame:hover` stylesheet rule: a stylesheet
-        reinstall triggers a full repaint including the regions behind the child
-        `QLabel`s, which a pure `:hover` pseudo-state would leave stale. Qt still
-        delivers `Enter` events to disabled widgets (unlike mouse press/release), so
-        the `isEnabled()` check keeps the grid visually inert until a font is loaded.
-        """
+        """Highlight the cell on hover; handled manually so child labels never paint stale."""
         if not self._empty and (not self._selected) and self.isEnabled():
             self._hovered = True
             self._refresh_style()
@@ -287,23 +258,11 @@ class GlyphGridPane(QWidget):
         return bar
 
     def set_font_loaded(self, loaded: bool) -> None:
-        """Toggle grid-cell interactivity on font availability.
-
-        The consonant grid is populated from a fixed constant rather than the loaded
-        font, so the 42 cells render even before a font is opened. Disabling the grid
-        holder keeps the cells visible (informational) but blocks selection until a
-        font loads, so the user cannot drop into a PUA page with no composites and
-        enable per-consonant controls with nothing to compose against.
-        """
+        """Toggle grid-cell interactivity on font availability."""
         self._grid_holder.setEnabled(loaded)
 
     def refresh_icons(self) -> None:
-        """Re-tint the Back / Prev / Next icons for the active theme palette.
-
-        Called by the main window after a theme switch (which follows
-        `icons.clear_cache`) so the breadcrumb/pager icons do not keep a stale light-
-        gray stroke on a newly light background.
-        """
+        """Re-tint the Back/Prev/Next icons for the active theme palette."""
         self._back_btn.setIcon(icons.icon("arrow-left"))
         self._prev_btn.setIcon(icons.icon("chevron-left"))
         self._next_btn.setIcon(icons.icon("chevron-right"))
@@ -323,11 +282,7 @@ class GlyphGridPane(QWidget):
         self._render_page(visuals, page_index, total_pages)
 
     def _render_page(self, visuals: list[CellVisual], page_index: int, total_pages: int) -> None:
-        """Refresh the 36 grid cells with `visuals` and the pagination footer.
-
-        Each existing `_GlyphCell` is rebound visually rather than rebuilt, so the
-        `cell_clicked` signal wiring set up at construction stays intact.
-        """
+        """Refresh the grid cells with `visuals` and update the pagination footer."""
         for idx, cell in enumerate(self._cells):
             visual = visuals[idx] if idx < len(visuals) else None
             cell.rebind(visual)

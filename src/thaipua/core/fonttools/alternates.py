@@ -1,9 +1,4 @@
-"""GSUB single and alternate substitution discovery for the PUA font generator.
-
-`GsubAlternateIndex` indexes a font's GSUB single and alternate substitutions, and
-`find_glyph_substitutions` builds the per-category catalog backing `glyph_substitutions`
-settings discovery.
-"""
+"""Discover GSUB single and alternate substitutions for glyph-substitution catalogs."""
 
 from __future__ import annotations
 
@@ -24,13 +19,7 @@ EXTENSION_SUBST = 7
 
 
 def iter_subtables(lookup: Any, extension_type: int) -> Iterator[tuple[int, Any]]:
-    """Yield each subtable of a GSUB/GPOS lookup as (effective_type, subtable).
-
-    An extension lookup wraps its real subtable in an `ExtSubTable`, where the lookup's
-    declared `LookupType` equals `extension_type` and the inner `ExtensionLookupType`
-    carries the true type. This function unwraps that indirection so callers always
-    receive the effective type.
-    """
+    """Unwrap extension lookups and yield each subtable with its effective type."""
     for st in lookup.SubTable:
         if lookup.LookupType == extension_type:
             yield (st.ExtensionLookupType, st.ExtSubTable)
@@ -54,7 +43,7 @@ class GsubAlternateIndex:
             alts.append(alt_name)
 
     def _process_single(self, subtable: Any) -> None:
-        """Register every `old -> new` pair of a GSUB single-substitution subtable."""
+        """Register every `old → new` pair of a GSUB single-substitution subtable."""
         for old, new in subtable.mapping.items():
             self._register(old, new)
 
@@ -79,24 +68,13 @@ class GsubAlternateIndex:
         logger.info("[ALT-GSUB] Discovered alternates for %d glyph(s)", len(self._alternates))
 
     def get_alternates(self, glyph_name: str) -> list[str]:
-        """Return the alternate glyph names registered for `glyph_name`.
-
-        Returns an empty list when no alternates are registered.
-        """
+        """Return the registered alternates of `glyph_name`, or an empty list."""
         return list(self._alternates.get(glyph_name, []))
 
 
 @dataclass(slots=True, frozen=True)
 class GlyphSubstitution:
-    """A category entry in a `find_glyph_substitutions` catalog.
-
-    Attributes:
-        base_glyph_name: The glyph name `codepoint` maps to in the font's cmap, or
-            `None` when the codepoint has no cmap entry.
-        alternate_glyph_names: The GSUB alternate glyph names registered for
-            `base_glyph_name` (empty when unmapped or no alternates), in GSUB discovery
-            order.
-    """
+    """Catalog entry pairing a codepoint's base glyph with its GSUB alternates."""
 
     codepoint: int
     base_glyph_name: str | None
@@ -104,12 +82,7 @@ class GlyphSubstitution:
 
 
 def _categorize(codepoints: set[int], font: TTFont, gsub_index: GsubAlternateIndex) -> list[GlyphSubstitution]:
-    """Build an ascending-codepoint-ordered catalog for one category.
-
-    Every codepoint in `codepoints` produces exactly one `GlyphSubstitution`, regardless
-    of cmap coverage or alternate count, so the caller renders a complete catalog per
-    category.
-    """
+    """Build a complete ascending-codepoint catalog for one category, including unmapped codepoints."""
     cmap = font.getBestCmap()
     out = []
     for cp in sorted(codepoints):
@@ -120,13 +93,7 @@ def _categorize(codepoints: set[int], font: TTFont, gsub_index: GsubAlternateInd
 
 
 def find_glyph_substitutions(font: TTFont) -> dict[str, list[GlyphSubstitution]]:
-    """Build a per-category GSUB substitution catalog for `font`.
-
-    Returns a `dict` with exactly the four category keys (`consonants`, `tone_marks`,
-    `above_vowels`, `below_vowels`), each mapping to a per-codepoint `GlyphSubstitution`
-    list in ascending-codepoint order, including codepoints with no cmap entry or
-    alternates.
-    """
+    """Build the four-category GSUB substitution catalog for `font`."""
     gsub_index = GsubAlternateIndex(font)
     return {
         "consonants": _categorize(THAI_CONSONANTS, font, gsub_index),

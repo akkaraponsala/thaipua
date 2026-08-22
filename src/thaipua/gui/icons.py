@@ -1,15 +1,4 @@
-"""PySide6 `QIcon` provider backed by tinted SVG assets for the toolbar and pane buttons.
-
-Every icon is a static SVG under `<assets>/icons/<name>.svg` — a 24-unit viewBox stroke
-drawing with `stroke-width="2"`, round caps/joins, and `stroke="currentColor"`. `Normal`
-mode is tinted with the palette's `ICON_FG` (or an explicit `color`), `Disabled` mode
-with `TEXT_DIM`: the explicit disabled tint is needed because mid-gray `Normal` strokes
-survive Qt's coarse auto-`Disabled` desaturation nearly unchanged, so a prepared dim
-tint is the only way a disabled button visibly dims.
-
-A theme switch must be followed by `clear_cache()` and a re-`setIcon` pass — the tinted
-`QSvgRenderer` engines cache by tint.
-"""
+"""SVG icon provider tinting assets with the active palette."""
 
 from __future__ import annotations
 
@@ -50,11 +39,7 @@ def _load_svg(name: str) -> bytes:
 
 
 def _renderer_for(name: str, tint: str) -> QSvgRenderer:
-    """Return a cached `QSvgRenderer` for `name` with the `currentColor` token set to `tint`.
-
-    The SVG is read once per `name` and re-typed per `tint`, so a theme switch (new
-    `ICON_FG`/`TEXT_DIM`) builds a fresh renderer without re-reading disk.
-    """
+    """Return a cached renderer for the name-tint pair."""
     key = (name, tint)
     cached = _renderer_cache.get(key)
     if cached is not None:
@@ -66,13 +51,7 @@ def _renderer_for(name: str, tint: str) -> QSvgRenderer:
 
 
 class _SvgIconEngine(QIconEngine):
-    """`QIconEngine` that paints one `IconName` SVG asset with a caller-chosen tint.
-
-    The engine keeps separate `QSvgRenderer` instances for the `Normal` and `Disabled`
-    tints and repaints whichever matches `mode` at the caller's request: `Normal` mode
-    in the constructor's `normal` tint (or the palette's `ICON_FG`), `Disabled` mode in
-    `disabled` (the palette's `TEXT_DIM`) so a disabled button visibly dims.
-    """
+    """Paint one SVG icon in normal and disabled tints."""
 
     def __init__(self, name: str, normal: str, disabled: str) -> None:
         super().__init__()
@@ -100,12 +79,7 @@ class _SvgIconEngine(QIconEngine):
 
 
 def icon(name: IconName, *, color: str | None = None) -> QIcon:
-    """Return a cached, theme-tinted, SVG-backed `QIcon` for one of the `IconName` keys.
-
-    `color=None` defaults to the active palette's `ICON_FG`; `Disabled` mode uses the
-    palette's `TEXT_DIM` so a button flipped off by `setEnabled(False)` visibly dims. An
-    unknown name raises `KeyError`; a missing SVG asset raises `FileNotFoundError`.
-    """
+    """Return a cached tinted icon for `name`; `color=None` uses the palette's `ICON_FG`."""
     tint = color if color is not None else theme.get_palette().ICON_FG
     disabled_tint = theme.get_palette().TEXT_DIM
     cache_key = (name, tint)
@@ -118,11 +92,7 @@ def icon(name: IconName, *, color: str | None = None) -> QIcon:
 
 
 def clear_cache() -> None:
-    """Drop every cached `QIcon` and `QSvgRenderer` (test isolation helper).
-
-    Also frees the tinted renderers so a theme switch rebuilds them from the current
-    palette.
-    """
+    """Drop every cached icon and renderer."""
     _cache.clear()
     _renderer_cache.clear()
 

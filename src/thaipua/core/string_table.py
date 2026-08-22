@@ -1,9 +1,4 @@
-"""Parsing and building of Bethesda Creation Engine string table files.
-
-Each table (.STRINGS, .DLSTRINGS, .ILSTRINGS) is a binary id -> string container
-consisting of a fixed header, an (id, offset) directory, and a packed data block of
-null-terminated or length-prefixed strings.
-"""
+"""Parse and build Bethesda Creation Engine string table files (.STRINGS/.DLSTRINGS/.ILSTRINGS)."""
 
 from __future__ import annotations
 
@@ -37,13 +32,7 @@ class CorruptedStringTableError(StringTableError):
 
 @dataclass(slots=True)
 class StringEntry:
-    """One record from a Creation Engine string table.
-
-    Attributes:
-        id: The record identifier.
-        offset: The byte offset of the string within the data block.
-        string: The decoded string value.
-    """
+    """One id-offset-string record from a string table."""
 
     id: int
     offset: int
@@ -52,25 +41,14 @@ class StringEntry:
 
 @dataclass(slots=True)
 class ParsedStringTable:
-    """A parsed string table and the codec used to decode its strings.
-
-    Attributes:
-        encoding: The codec that produced `entries` — utf-8 when every string decoded
-            cleanly, otherwise the fallback codec that was used for the file's legacy
-            (typically cp1252) bytes.
-    """
+    """Parsed entries plus the codec that decoded them."""
 
     entries: list[StringEntry]
     encoding: str
 
 
 def _resolve_file_type(file_path: str | Path, file_type: FileType | None = None) -> FileType:
-    """Resolve the table format from an explicit file_type or from file_path's extension.
-
-    Raises:
-        UnsupportedFormatError: If file_type is invalid or the file extension is
-            unrecognized.
-    """
+    """Infer the table format from the file extension, or validate an explicit type."""
     if file_type is not None:
         if file_type not in ["zstring", "length_prefixed"]:
             raise UnsupportedFormatError(f"Invalid file_type '{file_type}' (expected 'zstring' or 'length_prefixed')")
@@ -89,11 +67,7 @@ def _resolve_file_type(file_path: str | Path, file_type: FileType | None = None)
 def _decode_with_fallback(
     raw_bytes: bytes, *, primary_encoding: str = "utf-8", fallback_encoding: str = "cp1252"
 ) -> tuple[str, str]:
-    """Decode raw_bytes, returning (text, encoding) where encoding was actually used.
-
-    Decoding tries primary_encoding first. When that fails, raw_bytes are decoded via
-    fallback_encoding (a legacy codepage such as cp1252).
-    """
+    """Decode bytes preferring the primary encoding; return the text plus the codec used."""
     try:
         return (raw_bytes.decode(primary_encoding), primary_encoding)
     except UnicodeDecodeError:
@@ -102,12 +76,7 @@ def _decode_with_fallback(
 
 
 def _extract_raw_bytes(data_block: bytes, string_offset: int, resolved_type: FileType, file_path: str | Path) -> bytes:
-    """Return the raw string bytes at `string_offset` for the resolved table format.
-
-    Raises:
-        CorruptedStringTableError: The offset or declared length runs past the data
-            block, the declared length field is invalid, or a zstring is unterminated.
-    """
+    """Read one string's bytes at `string_offset` according to the table format."""
     if resolved_type == "zstring":
         terminator = data_block.find(b"\x00", string_offset)
         if terminator == -1:
@@ -134,19 +103,9 @@ def _extract_raw_bytes(data_block: bytes, string_offset: int, resolved_type: Fil
 def parse_strings_file(
     file_path: str | Path, *, file_type: FileType | None = None, fallback_encoding: str = "cp1252"
 ) -> ParsedStringTable:
-    """Parse a string table file into a `ParsedStringTable` (directory order preserved).
+    """Parse a string table into ordered entries, decoding UTF-8 with a legacy fallback.
 
-    Strings decode as UTF-8, falling back to `fallback_encoding` for bytes that are not
-    valid UTF-8; `ParsedStringTable.encoding` reports which codec was used. Entries
-    sharing an offset share the same decoded `string` value.
-
-    Args:
-        file_type: When `None`, inferred from the file extension.
-
-    Raises:
-        CorruptedStringTableError: Header or declared sizes are inconsistent with the
-            file's actual contents.
-        UnsupportedFormatError: Format cannot be resolved.
+    Entries sharing an offset share the same decoded value.
     """
     resolved_type = _resolve_file_type(file_path, file_type)
     data = Path(file_path).read_bytes()
@@ -187,18 +146,9 @@ def parse_strings_file(
 def write_strings_file(
     entries: list[StringEntry], file_path: str | Path, *, file_type: FileType | None = None, encoding: str = "utf-8"
 ) -> Path:
-    """Build a string table file from `entries`, preserving directory order.
+    """Write entries as a string table, deduplicating identical strings and recomputing offsets.
 
-    Each entry's `offset` field is ignored: offsets are recomputed, and identical
-    strings are deduplicated into a single data-block entry. Pass
-    `ParsedStringTable.encoding` to keep the output on the same on-disk codec as the
-    source. Parent directories of `file_path` are created as needed.
-
-    Args:
-        file_type: When `None`, inferred from the file extension.
-
-    Returns:
-        The path written to.
+    Pass `ParsedStringTable.encoding` to keep the source's on-disk codec.
     """
     resolved_type = _resolve_file_type(file_path, file_type)
     string_to_offset: dict[str, int] = {}

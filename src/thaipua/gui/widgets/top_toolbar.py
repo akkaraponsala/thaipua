@@ -1,7 +1,4 @@
-"""Top action toolbar: Open/Save Font, Decode PUA, Encode Thai, Find Substitutions, Settings.
-
-File/encoding actions are left-aligned; Settings is pushed to the far right by a stretch.
-"""
+"""Top action toolbar: Open/Save Font, Decode PUA, Encode Thai, Find Substitutions, Settings."""
 
 from __future__ import annotations
 
@@ -12,11 +9,7 @@ from thaipua.gui import icons
 
 
 class TopToolbar(QWidget):
-    """The horizontal action bar at the top of the main window.
-
-    Each button emits a `*_requested` signal; the main window wires those to dialogs,
-    file-system access, or backend calls.
-    """
+    """Horizontal action bar emitting a `*_requested` signal per button."""
 
     open_font_requested = Signal()
     save_font_requested = Signal()
@@ -40,10 +33,10 @@ class TopToolbar(QWidget):
         self._save_btn.setToolTip("Save Font")
         self._decode_btn = QPushButton(self)
         self._decode_btn.setIcon(icons.icon("file-input"))
-        self._decode_btn.setToolTip("Decode PUA -> Thai")
+        self._decode_btn.setToolTip("Decode PUA → Thai")
         self._encode_btn = QPushButton(self)
         self._encode_btn.setIcon(icons.icon("binary"))
-        self._encode_btn.setToolTip("Encode Thai -> PUA")
+        self._encode_btn.setToolTip("Encode Thai → PUA")
         self._find_btn = QPushButton(self)
         self._find_btn.setIcon(icons.icon("search"))
         self._find_btn.setToolTip("Find Substitutions")
@@ -82,7 +75,7 @@ class TopToolbar(QWidget):
         self.set_font_loaded(False)
 
     def set_font_loaded(self, loaded: bool) -> None:
-        """Toggle the disabled state of Save / Decode / Encode / Mapping / Find on font availability."""
+        """Toggle the actions that require a loaded font."""
         self._save_btn.setEnabled(loaded)
         self._decode_btn.setEnabled(loaded)
         self._encode_btn.setEnabled(loaded)
@@ -90,12 +83,7 @@ class TopToolbar(QWidget):
         self._find_btn.setEnabled(loaded)
 
     def refresh_icons(self) -> None:
-        """Re-tint every button icon for the active theme palette.
-
-        Called by the main window after a theme switch (which follows
-        `icons.clear_cache`) so a dark-theme light-gray stroke does not linger on a
-        newly light background (or vice versa).
-        """
+        """Re-tint every button icon for the active theme palette."""
         self._open_btn.setIcon(icons.icon("folder-open"))
         self._save_btn.setIcon(icons.icon("save"))
         self._decode_btn.setIcon(icons.icon("file-input"))

@@ -1,9 +1,4 @@
-"""Application-wide logging configuration.
-
-Installs a console handler plus a size-rotated file handler under the runtime-data
-directory so module-level `getLogger(__name__)` loggers across `core/` and `gui/`
-have somewhere to write. Called once from `app.main`; safe to call again (no-op).
-"""
+"""Configure application-wide console and rotating-file logging."""
 
 from __future__ import annotations
 
@@ -27,11 +22,7 @@ def setup_logging(
     console_level: int = logging.INFO,
     file_level: int = logging.DEBUG,
 ) -> Path:
-    """Attach console + rotating-file handlers to the root logger.
-
-    `base_dir` isolates the log location for tests; production uses `APP_DATA_DIR`.
-    Returns the resolved log file path. Re-invocations leave the configuration as-is.
-    """
+    """Attach console and rotating-file handlers to the root logger once, returning the log path."""
     root_logger = logging.getLogger()
     if getattr(root_logger, _CONFIGURED_FLAG, False):
         return log_file_path(base_dir)

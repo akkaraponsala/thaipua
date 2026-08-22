@@ -1,19 +1,4 @@
-"""Composite PUA glyph assembly from a source font via advance-width composition.
-
-`ThaiPuaFontGenerator` stacks the consonant, vowel, and tone-mark glyphs as components
-shifted by the consonant's advance width (`dx = cons_advance`, `dy = 0`), preserving the
-source font's vertical mark placement. Per-axis offsets and snap deltas from
-`PlacementSettings` layer on top of that base — the offset tiering lives in
-`ConsonantSettings.offset_for`, the snap math in the `_place_*` methods, the
-ownership-aware install in `install_composite`, and the read-only preview path in
-`compose_components`.
-
-`install_composite` replaces glyphs **in place under a stable prefixed name**
-(`thaipua_XXXX`) after consulting `classify_pua_slot`: owned slots are rebuilt freely,
-foreign composites are replaced with an info log, and locked slots (unrecognized
-non-composite content) are skipped and reported via `InstallResult` — no silent drops,
-and callers never need to evict first.
-"""
+"""Compose and install composite PUA glyphs from Thai clusters onto a loaded font."""
 
 from __future__ import annotations
 
@@ -50,15 +35,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True, frozen=True)
 class _AboveVowelPlacement:
-    """A placed above-vowel's translation and pre-translation bounding box.
-
-    The bounding box is retained so a tone mark stacked on the vowel can compute its
-    target height.
-
-    Attributes:
-        bounding_box: The vowel's original (pre-translation) bounding box, or `None`
-            when the vowel glyph has no drawable contour.
-    """
+    """Placement of an above-base vowel, retaining its untranslated bounds for tone stacking."""
 
     dx: int
     dy: int
@@ -67,39 +44,25 @@ class _AboveVowelPlacement:
 
 @dataclass(slots=True, frozen=True)
 class ComponentPlacement:
-    """One resolved composite part: a glyph name and its fontTools 6-tuple affine.
-
-    `compose_components` yields these without installing anything, so callers can
-    replay the exact layout `install_composite` would produce (offsets, substitutions,
-    snaps included) into their own pen or path.
-    """
+    """One resolved composite component: a glyph name plus its affine transform."""
 
     glyph_name: str
     transform: tuple[int, int, int, int, int, int]
 
 
 class InstallStatus(Enum):
-    """Outcome of one `install_composite` call."""
+    """Outcome categories for a single composite install."""
 
     INSTALLED = "installed"
-    """Fresh install onto a previously unmapped PUA codepoint."""
-
     REPLACED_OWNED = "replaced_owned"
-    """A prefixed glyph at this slot was rebuilt in place."""
-
     REPLACED_FOREIGN_COMPOSITE = "replaced_foreign_composite"
-    """An unreferenced foreign composite was replaced."""
-
     SKIPPED_LOCKED = "skipped_locked"
-    """Slot is locked (unrecognized non-composite content); nothing was written."""
-
     SKIPPED_MISSING_CONSONANT = "skipped_missing_consonant"
-    """The resolved consonant glyph is absent from the font; nothing was written."""
 
 
 @dataclass(slots=True, frozen=True)
 class InstallResult:
-    """Report of one composite install attempt, surfaced to callers and UI."""
+    """Outcome of one install attempt: the status and the affected glyph name."""
 
     status: InstallStatus
     glyph_name: str | None
@@ -110,28 +73,14 @@ _INSTALL_STATUS_BY_OWNERSHIP: dict[SlotOwnership, InstallStatus] = {
     SlotOwnership.OWNED: InstallStatus.REPLACED_OWNED,
     SlotOwnership.REPLACEABLE: InstallStatus.REPLACED_FOREIGN_COMPOSITE,
 }
-"""Ownership verdict to install-outcome mapping; LOCKED never reaches an install."""
+"""Map slot ownership verdicts to install outcomes; locked slots never reach an install."""
 
 
 class ThaiPuaFontGenerator:
-    """Owns a loaded TTFont, its bounding-box cache, and the active `PlacementSettings`.
-
-    Installs composite PUA glyphs into the font in place; build a fresh instance per
-    output font. `compose_components` performs the same layout read-only for preview.
-    A CFF source (.otf) is converted in memory to TrueType quadratic outlines at
-    construction (see `thaipua.core.fonttools.cff_convert`) so both flavors flow
-    through the identical install pipeline; the converted copy saves back as `.ttf`.
-    """
+    """Generate and install composite PUA glyphs into a single loaded font."""
 
     def __init__(self, font_path: str, settings: PlacementSettings | None) -> None:
-        """Load the source font and its bounding-box reader.
-
-        Profile resolution is the caller's responsibility (see
-        `thaipua.core.profiles.resolve_settings_profile`). `settings=None` falls back
-        to `default_placement_settings()` (pure advance-width composition, no overrides
-        or snaps). A CFF source is converted to a TrueType working copy in memory;
-        `source_is_cff` reports whether that conversion happened.
-        """
+        """Load the font for editing, converting CFF sources to TrueType outlines in memory."""
         self.font = TTFont(font_path)
         self.source_is_cff = has_cff_outlines(self.font)
         if self.source_is_cff:
@@ -142,29 +91,18 @@ class ThaiPuaFontGenerator:
         self._cmap: dict[int, str] = self.font.getBestCmap()
 
     def has_glyph(self, glyph_name: str | None) -> bool:
-        """Return whether `glyph_name` exists in the font.
-
-        Returns `False` if `glyph_name` is `None` or empty.
-        """
+        """Return whether `glyph_name` exists in the font."""
         return bool(glyph_name) and glyph_name in self._glyph_names
 
     def get_glyph_name(self, unicode_point: int | None) -> str | None:
-        """Return the font's glyph name for `unicode_point`.
-
-        Falls back to a synthetic `uniXXXX` name when the codepoint has no cmap entry.
-        Returns `None` for `None` or codepoint `0`.
-        """
+        """Return the glyph name for `unicode_point`; fall back to a synthetic `uniXXXX` name when unmapped."""
         if not unicode_point:
             return None
         return self._cmap.get(unicode_point) or f"uni{unicode_point:04X}"
 
     @staticmethod
     def _combo_key(below_uni: int | None, above_uni: int | None, tone_uni: int | None) -> str | None:
-        """Return the canonical cluster-key for `combo_offsets` lookups.
-
-        Multi-mark clusters (two or more marks) key into `combo_offsets`; single-mark
-        clusters return `None` and resolve from `mark_offsets[role][mark]`.
-        """
+        """Return the canonical combination key for a multi-mark cluster, or `None` for single marks."""
         cps = [c for c in [below_uni, above_uni, tone_uni] if c]
         if len(cps) < 2:
             return None
@@ -173,14 +111,7 @@ class ThaiPuaFontGenerator:
     def resolve_consonant(
         self, cons_uni: int, cons_settings: ConsonantSettings, *, present_roles: frozenset[str]
     ) -> str:
-        """Resolve the consonant glyph via the per-consonant self-substitution override.
-
-        This is a self-substitution: the rule's codepoint is `cons_uni` itself, scoped
-        to this consonant's entry and gated on `present_roles`. When the override names
-        an absent glyph, the miss is logged and the default glyph is used. With no
-        override, the default glyph is returned unchanged. Returns an empty string when
-        the consonant glyph is missing from the font.
-        """
+        """Resolve the consonant glyph under its substitution override; return `""` when absent from the font."""
         default_name = self.get_glyph_name(cons_uni)
         if default_name is None:
             return ""
@@ -199,10 +130,7 @@ class ThaiPuaFontGenerator:
     def resolve_below_vowel(
         self, below_uni: int | None, cons_settings: ConsonantSettings, *, present_roles: frozenset[str]
     ) -> str | None:
-        """Resolve a below-base vowel glyph via the per-consonant substitution override.
-
-        Returns `None` when no below vowel was requested (`below_uni` falsy).
-        """
+        """Resolve the below-vowel glyph under its substitution override; return `None` when none is requested."""
         if not below_uni:
             return None
         default_name = self.get_glyph_name(below_uni)
@@ -221,10 +149,7 @@ class ThaiPuaFontGenerator:
     def resolve_vowel(
         self, above_uni: int | None, cons_settings: ConsonantSettings, *, present_roles: frozenset[str]
     ) -> str | None:
-        """Resolve an above-base vowel glyph via the per-consonant substitution override.
-
-        Returns `None` when no above vowel was requested (`above_uni` falsy).
-        """
+        """Resolve the above-vowel glyph under its substitution override; return `None` when none is requested."""
         if not above_uni:
             return None
         default_name = self.get_glyph_name(above_uni)
@@ -243,10 +168,7 @@ class ThaiPuaFontGenerator:
     def resolve_tone(
         self, tone_uni: int | None, cons_settings: ConsonantSettings, *, present_roles: frozenset[str]
     ) -> str | None:
-        """Resolve a tone-mark glyph via the per-consonant substitution override.
-
-        Returns `None` when no tone was requested (`tone_uni` falsy).
-        """
+        """Resolve the tone-mark glyph under its substitution override; return `None` when none is requested."""
         if not tone_uni:
             return None
         default_name = self.get_glyph_name(tone_uni)
@@ -273,12 +195,7 @@ class ThaiPuaFontGenerator:
         vowel_name: str,
         combo_key: str | None,
     ) -> None:
-        """Place a below-base vowel component.
-
-        Base Y is `0` (font-design height) unless the `below_vowel_to_consonant` snap is
-        on, in which case the vowel's `y_max` snaps to the consonant's `y_min` plus
-        `gap`. A missing bounding box falls back to `dy=0` with a warning.
-        """
+        """Place the below vowel against the consonant, snapping its top edge to the consonant when configured."""
         snap_cfg = cons_settings.snap_for(SNAP_BELOW_TO_CONS)
         do_snap = snap_cfg.enabled if snap_cfg is not None else False
         gap = snap_cfg.gap if snap_cfg is not None else 0
@@ -312,13 +229,7 @@ class ThaiPuaFontGenerator:
         vowel_name: str,
         combo_key: str | None,
     ) -> _AboveVowelPlacement:
-        """Place an above-base vowel component.
-
-        Base Y is `0` (font-design height) unless the `above_vowel_to_consonant` snap is
-        on, in which case the vowel's `y_min` snaps to the consonant's `y_max` plus
-        `gap`. Returns the final translation and the vowel's pre-translation bounding
-        box so a tone stacked on it can compute its own target height.
-        """
+        """Place the above vowel against the consonant, snapping its bottom edge when configured."""
         snap_cfg = cons_settings.snap_for(SNAP_ABOVE_TO_CONS)
         do_snap = snap_cfg.enabled if snap_cfg is not None else False
         gap = snap_cfg.gap if snap_cfg is not None else 0
@@ -353,15 +264,7 @@ class ThaiPuaFontGenerator:
         above_placement: _AboveVowelPlacement | None,
         combo_key: str | None,
     ) -> None:
-        """Place a tone-mark component.
-
-        When stacked on an above vowel (`above_placement` not `None`), base Y snaps the
-        tone's `y_min` to the vowel's effective `y_max` (pre-translation `y_max` + final
-        `dy` + `gap`) when `tone_mark_to_above_vowel` is on. Otherwise base Y is `0`.
-        When stacked, the base-offset fallback tier resolves against
-        `ROLE_TONE_MARK_ON_ABOVE_VOWEL` so the stack gets an independent base offset.
-        Combo/mark overrides key on `ROLE_TONE_MARK`.
-        """
+        """Place the tone mark, snapping it onto the above vowel when one is stacked."""
         base_role = ROLE_TONE_MARK_ON_ABOVE_VOWEL if above_placement is not None else None
         offset = cons_settings.offset_for(ROLE_TONE_MARK, mark_uni=tone_uni, combo_key=combo_key, base_role=base_role)
         dx = cons_advance + offset.x
@@ -400,14 +303,10 @@ class ThaiPuaFontGenerator:
         *,
         pua_code: int | None = None,
     ) -> list[ComponentPlacement] | None:
-        """Resolve and lay out the `cons_uni` + marks components under `settings`.
+        """Compute component placements for a cluster without modifying the font.
 
-        Pure read-only computation — resolves substitutions and computes the exact
-        offset/snap placements `install_composite` would install, but returns the
-        `ComponentPlacement` list instead of touching `glyf`/`hmtx`/`cmap`, so callers
-        can replay the layout into their own pen or path for any codepoint without
-        mutating the font. `settings=None` uses the generator's current settings.
-        Returns `None` when the resolved consonant glyph is missing from the font.
+        Applies substitutions, offsets, and snaps exactly as an install would; return
+        `None` when the consonant glyph is missing from the font.
         """
         effective = settings if settings is not None else self.settings
         mark_roles = set()
@@ -478,22 +377,11 @@ class ThaiPuaFontGenerator:
         *,
         settings: PlacementSettings | None = None,
     ) -> InstallResult:
-        """Resolve, assemble, and install a composite PUA glyph at `pua_code`.
+        """Install a composite glyph at `pua_code` and report the outcome.
 
-        The slot's current occupant is classified via `classify_pua_slot`:
-
-        - FREE / OWNED / REPLACEABLE slots proceed; the composite is installed under
-          the stable prefixed name `thaipua_XXXX`, **replacing any existing glyph in
-          place** — the glyph order entry and cmap mapping stay intact across rebuilds,
-          so anything referencing the previous glyph by name keeps resolving.
-        - LOCKED slots (unrecognized non-composite content, dangling cmap entries, or
-          non-glyf fonts) are skipped and reported as `InstallStatus.SKIPPED_LOCKED`;
-          nothing is written.
-        - A missing consonant glyph yields `SKIPPED_MISSING_CONSONANT`.
-
-        Returns an `InstallResult` describing exactly what happened; callers surface
-        skip statuses rather than discovering them from logs. `settings=None` uses the
-        generator's current settings.
+        Free, owned, and replaceable slots are rebuilt in place under the stable
+        `thaipua_XXXX` name, keeping glyph order and cmap mapping intact. Locked slots
+        and missing consonants are skipped without writing anything.
         """
         existing = self._cmap.get(pua_code)
         ownership = classify_pua_slot(existing, self.font.get("glyf"))
@@ -527,14 +415,11 @@ class ThaiPuaFontGenerator:
         return InstallResult(status, glyph_name)
 
     def _install_composite_glyph(self, glyph_name: str, glyph: Any, unicode_point: int, width_from: str) -> bool:
-        """Register `glyph` under `glyph_name` in `glyf`, `hmtx`, `cmap`, and the glyph-name set.
+        """Store the glyph and map `unicode_point` on every Unicode cmap subtable.
 
-        Appends `glyph_name` to the glyph order when new, otherwise replaces the stored
-        glyph object in place (same name → GSUB/GPOS references remain valid). Copies
-        the advance width from `width_from` (using the LSB from the glyph's own
-        `xMin`), maps `unicode_point` on every Unicode cmap subtable, and invalidates
-        the bounding-box cache so stale geometry is never served. Returns `True` when
-        an existing glyph was replaced.
+        Appends the name to the glyph order when new; otherwise replaces the stored
+        glyph in place so existing references stay valid. Copies the advance width from
+        `width_from` and returns whether an existing glyph was replaced.
         """
         replaced = glyph_name in self._glyph_names
         if not replaced:

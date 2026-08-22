@@ -1,19 +1,4 @@
-"""Static PUA-map validation: structural and font-aware slot checks, never mutating.
-
-`validate_pua_map` is the single source of truth for the mapping editor's per-entry
-status badges. It never rewrites the map — collisions surface as issues for the user
-to resolve by editing entries (or picking a different codepoint range), matching the
-static-map philosophy where allocation is a user decision.
-
-Two check tiers:
-
-- structural (font-free): value must be one character inside the PUA range, the Thai
-  key must decompose into consonant + known marks (`decompose_thai_cluster`, which also
-  rejects SARA AM U+0E33), and no two keys may share a PUA value;
-- slot-aware (needs a `PuaSlotContext` snapshot): the occupant of the target codepoint
-  is classified via `classify_pua_slot` — LOCKED occupants are an ERROR (the install
-  would skip and the glyph would be missing at runtime), foreign composites a WARNING.
-"""
+"""Validate PUA mappings structurally and against live font slots without mutating anything."""
 
 from __future__ import annotations
 
@@ -33,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class IssueSeverity(Enum):
-    """Severity of one validation issue; ERROR blocks a usable install."""
+    """Severity of one validation issue; `ERROR` blocks a usable install."""
 
     WARNING = "warning"
     ERROR = "error"
@@ -50,28 +35,21 @@ class PuaMapIssue:
 
 @dataclass(slots=True)
 class PuaSlotContext:
-    """Plain-data snapshot of a font's cmap/glyf facts for slot classification.
-
-    Built once per editor session from the live font so repeated revalidation while
-    the user edits entries never re-walks `getBestCmap`. `glyf` is the raw glyf table
-    (or `None` for CFF fonts); it satisfies `classify_pua_slot`'s structural protocol
-    directly.
-    """
+    """Snapshot of a font's cmap and glyf facts for slot classification."""
 
     cmap: dict[int, str]
     glyf: Any | None
 
 
 def slot_context_from_font(font: TTFont) -> PuaSlotContext:
-    """Snapshot `font`'s cmap and glyf table into a classification context."""
+    """Snapshot `font`'s `cmap` and `glyf` table into a classification context."""
     return PuaSlotContext(cmap=font.getBestCmap(), glyf=font.get("glyf"))
 
 
 def validate_pua_map(mapping: Mapping[str, str], context: PuaSlotContext | None) -> list[PuaMapIssue]:
-    """Validate every entry of `mapping`; returns issues only (a clean map yields `[]`).
+    """Validate every mapping entry and return issues only; a clean map yields an empty list.
 
-    Entries are checked in mapping order; duplicate-value errors are appended in a
-    second pass so every involved key receives one.
+    Duplicate-value errors are reported once per involved key in a second pass.
     """
     issues: list[PuaMapIssue] = []
     value_owners: dict[str, list[str]] = {}
@@ -106,11 +84,9 @@ def validate_pua_map(mapping: Mapping[str, str], context: PuaSlotContext | None)
 
 
 def parse_codepoint(text: str) -> str | None:
-    """Parse editor input into a single-character value, or `None` when unparseable.
+    """Interpret editor input as a single-character value, accepting literal characters, bare hex, or `U+XXXX`.
 
-    Accepts a literal character (a PUA char pasted directly), bare hex (`E0A3`), or
-    prefixed hex (`U+E0A3`, `0xE0A3`). Out-of-range codepoints are returned as-is; the
-    validator flags them with an ERROR rather than rejecting the entry outright.
+    Out-of-range codepoints pass through; the validator flags them instead.
     """
     stripped = text.strip()
     if not stripped:

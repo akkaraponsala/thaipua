@@ -1,20 +1,4 @@
-"""Right pane: *Controls* — Mark Offsets, Base Offsets, Glyph Substitutions, Snap Configs.
-
-The pane owns no `AppState`; it exposes high-level setters and emits low-level signals
-so the main window stays the single mutator of state:
-
-- `offset_changed(x, y)` — live per-glyph *Mark Offset* edits.
-- `base_offset_changed(role, x, y)` — live per-consonant *Base Offsets* edits.
-- `glyph_substitution_changed(role, glyph_name)` — commits a per-consonant *Glyph
-  Substitution* override from the GSUB catalog (an empty name clears).
-- `snap_changed(name, enabled, gap)` — commits a per-consonant *Snap Config*.
-- `category_changed(category)` — notifies that the X/Y inputs must be reloaded for the
-  newly picked role.
-
-Every group commits live through the main window's signal handlers. Per-consonant groups
-are gated on an active consonant; the Mark Offset group on a selected PUA glyph. Base and
-Mark Offsets read/write disjoint `ConsonantSettings` tiers (see `gui.state`).
-"""
+"""Right pane exposing mark offsets, base offsets, glyph substitutions, and snap configs."""
 
 from __future__ import annotations
 
@@ -92,13 +76,7 @@ _DEFAULT_ROLE_LABELS: dict[str, str] = {
 
 
 class ControlsPane(QWidget):
-    """Right-pane *Controls*: offset + per-consonant settings for one glyph.
-
-    The Mark Offset group binds to the active PUA glyph (offset sliders per selected
-    role radio) and previews live. The Base Offsets, Glyph Substitutions, and Snap
-    Configs groups bind to the active consonant and commit live so each control mirrors
-    the composer's settings directly.
-    """
+    """Editable controls bound to the active glyph and consonant."""
 
     offset_changed = Signal(int, int)
     base_offset_changed = Signal(str, int, int)
@@ -200,14 +178,7 @@ class ControlsPane(QWidget):
         return label
 
     def _mirror(self, other: QSlider | QSpinBox, value: int) -> None:
-        """Set `other` to `value` without re-entering its change handler.
-
-        The `offset_changed` emission is throttled to one commit per interval by
-        starting the single-shot timer only while idle, so fast drags keep emitting
-        intermediate commits instead of starving until they pause. `_emit_offset_commit`
-        reads live spin values at fire time, so the newest position (incl. the drag's
-        final tick) is never dropped.
-        """
+        """Mirror `value` into `other` without re-triggering handlers, throttling commits."""
         was_blocked = other.blockSignals(True)
         other.setValue(value)
         other.blockSignals(was_blocked)
@@ -244,11 +215,7 @@ class ControlsPane(QWidget):
             self.category_changed.emit(category)
 
     def _build_base_offsets_group(self) -> QGroupBox:
-        """Build the *Base Offsets* group: one X/Y spin pair per placement role.
-
-        Both spins of each role emit `base_offset_changed` with the live pair on every
-        edit — the main window writes the `base_offsets` tier directly.
-        """
+        """Build the Base Offsets group: one X/Y spin pair per placement role."""
         group = QGroupBox("Base Offsets", self)
         layout = QVBoxLayout(group)
         layout.setContentsMargins(10, 16, 10, 10)
@@ -282,12 +249,7 @@ class ControlsPane(QWidget):
         self.base_offset_changed.emit(role, x_spin.value(), y_spin.value())
 
     def _build_glyph_substitutions_group(self) -> QGroupBox:
-        """Build the *Glyph Substitutions* group: one read-only combo per substitution role.
-
-        Committing live means a dropdown selection fires immediately through
-        `currentIndexChanged`; there is no free-text input, so a substitution is
-        always one of the catalog candidates (or "(no override)").
-        """
+        """Build the Glyph Substitutions group: one read-only combo per substitution role."""
         group = QGroupBox("Glyph Substitutions", self)
         form = QFormLayout(group)
         form.setContentsMargins(10, 16, 10, 10)
@@ -309,12 +271,7 @@ class ControlsPane(QWidget):
         self.glyph_substitution_changed.emit(role, glyph_name)
 
     def _build_snap_configs_group(self) -> QGroupBox:
-        """Build the *Snap Configs* group: one checkbox + gap spin per snap pair.
-
-        Toggling a checkbox re-enables its gap spin and emits `snap_changed` for the
-        (now on/off) pair; editing the gap emits the live `(enabled, gap)` so the main
-        window commits both fields together.
-        """
+        """Build the Snap Configs group: one checkbox plus gap spin per snap pair."""
         group = QGroupBox("Snap Configs", self)
         layout = QVBoxLayout(group)
         layout.setContentsMargins(10, 16, 10, 10)
@@ -357,12 +314,10 @@ class ControlsPane(QWidget):
         self.snap_changed.emit(name, chk.isChecked(), spin.value())
 
     def set_enabled(self, enabled: bool, categories: frozenset[MarkCategory] | None = None) -> None:
-        """Toggle the per-glyph Mark Offset controls' disabled state.
+        """Toggle the mark-offset controls, restricting radios to the enabled categories.
 
-        A radio stays disabled when its category is absent from the spec's mark
-        composition. Disabling resets the cached set to all categories so a stale
-        partial glyph's roles cannot leak into the next selection; re-enabling without
-        `categories` re-uses the current set (for an unchanged spec).
+        Disabling resets the category cache so a stale glyph's roles cannot leak into
+        the next selection.
         """
         self._enabled = enabled
         if not enabled:
@@ -377,13 +332,10 @@ class ControlsPane(QWidget):
             rb.setEnabled(enabled and category in self._enabled_categories)
 
     def set_consonant_enabled(self, enabled: bool) -> None:
-        """Toggle the per-consonant Base Offsets / Consonant substitution / Snap Configs groups.
+        """Toggle the per-consonant Base Offsets, Consonant substitution, and Snap Configs groups.
 
-        The consonant-role substitution combo follows this enabled state; the mark-role
-        combos are NOT toggled here — they require both an active consonant and a
-        selected PUA glyph, so they're managed by `load_spec_mark_substitutions` and
-        reset to disabled otherwise. Snap gap spins additionally track their own
-        checkbox.
+        Mark-role substitution combos require a selected PUA glyph and are managed by
+        `load_spec_mark_substitutions`.
         """
         self._consonant_active = enabled
         self._sub_combos[SUB_CONSONANT].setEnabled(enabled)
@@ -395,17 +347,7 @@ class ControlsPane(QWidget):
             self._snap_gaps[name].setEnabled(enabled and chk.isChecked())
 
     def load_offset(self, x: int, y: int, category: MarkCategory) -> None:
-        """Set sliders/spinboxes/radio to `(x, y)` and `category` without emitting.
-
-        Used by the main window when a new glyph is selected so the controls reflect the
-        glyph's stored offset without triggering a live preview pass. Any commit
-        throttled from the previous glyph is cancelled first so a stale emission cannot
-        re-render the newly selected glyph.
-
-        All radios are blocked for the duration of the update — when one radio is
-        checked, Qt internally un-checks the previously active radio and would otherwise
-        emit a stray `toggled(False)` event.
-        """
+        """Display `(x, y)` and `category` without emitting; cancel any pending throttled commit."""
         self._commit_timer.stop()
         self._offset_pending = False
         for w in self._slider_spin_pairs_flat():
@@ -429,13 +371,9 @@ class ControlsPane(QWidget):
     def load_consonant_settings(
         self, cons_uni: int, settings: PlacementSettings, catalog: Mapping[str, Sequence[GlyphSubstitution]]
     ) -> None:
-        """Populate Base Offsets / Consonant Substitution / Snap Configs for `cons_uni`.
+        """Populate Base Offsets, Consonant substitution, and Snap Configs for `cons_uni` without emitting.
 
-        The Consonant-role combo is populated here (its codepoint is `cons_uni`); the
-        mark-role combos are reset to "(no override)" and disabled until
-        `load_spec_mark_substitutions` (which knows the specific mark codepoint). All
-        widgets are signal-blocked during the reload to prevent live commits. A stored
-        substitution not in the catalog is added to the combo so it round-trips.
+        A stored substitution not in the catalog is added to the combo so it round-trips.
         """
         for role, (x_spin, y_spin) in self._base_offset_spins.items():
             x_spin.blockSignals(True)
@@ -471,13 +409,9 @@ class ControlsPane(QWidget):
     def load_spec_mark_substitutions(
         self, spec: CompositeSpec, settings: PlacementSettings, catalog: Mapping[str, Sequence[GlyphSubstitution]]
     ) -> None:
-        """Populate the mark-role substitution combos for `spec`'s mark codepoints.
+        """Populate the mark-role substitution combos from `spec`'s mark codepoints.
 
-        Each combo is reseeded from the catalog for its spec-provided codepoint and
-        switches to the stored contextual override matching the spec's present mark-role
-        set. A role absent from the spec is reset and disabled. Scoped to
-        `spec.cons_uni`. Signal-blocked during reload; a stored substitution not in the
-        catalog is added so it round-trips.
+        A role absent from the spec is reset and disabled.
         """
         present_roles = present_roles_for(spec)
         role_to_codepoint = (
@@ -508,13 +442,7 @@ class ControlsPane(QWidget):
         catalog: Mapping[str, Sequence[GlyphSubstitution]],
         cons_uni: int,
     ) -> None:
-        """Reload the consonant-role substitution combo with the active spec's context.
-
-        Uses `present_roles_for(spec)` so the combo surfaces the contextual rule's
-        stored glyph instead of the always-on fallback. `load_consonant_settings`
-        continues to use the always-on context for the same combo (no PUA spec
-        selected).
-        """
+        """Reload the consonant-role substitution combo using the active spec's context."""
         self._reload_role_substitution(
             SUB_CONSONANT, cons_uni, cons_uni, settings, catalog, present_roles=present_roles_for(spec)
         )
@@ -531,13 +459,8 @@ class ControlsPane(QWidget):
     ) -> None:
         """Reload a single substitution combo from `catalog`/`settings` without emitting.
 
-        `cons_uni` selects the consonant; `codepoint` is the substituted codepoint. The
-        `present_roles` set gates contextual matching (empty matches only always-on
-        rules). canonicalization is per-codepoint category (`context_canonicalizer`):
-        a tone-mark rule's below-vowel family surfaces for the tone-only cluster; an
-        ascender-protruding consonant rule (e.g. ฬ) surfaces for every above-stack
-        context; every other consonant and vowel rule uses the generic
-        tone-within-vowel-family canonicalization.
+        `cons_uni` selects the consonant; `codepoint` is the substituted codepoint;
+        `present_roles` gates contextual matching.
         """
         combo = self._sub_combos[role]
         combo.blockSignals(True)
@@ -555,11 +478,7 @@ class ControlsPane(QWidget):
             combo.blockSignals(False)
 
     def _select_stored_substitution(self, combo: QComboBox, stored: str) -> None:
-        """Select `stored` in a read-only combo, adding the item if absent.
-
-        A stored substitution not among the catalog candidates is appended so it round-
-        trips instead of silently showing "(no override)".
-        """
+        """Select `stored` in a read-only combo, appending it when absent from the catalog."""
         index = combo.findText(stored)
         if index < 0:
             combo.addItem(stored)
@@ -567,11 +486,7 @@ class ControlsPane(QWidget):
         combo.setCurrentIndex(index)
 
     def clear_consonant_settings(self) -> None:
-        """Reset the per-consonant groups and disable them.
-
-        Used when the active consonant is left (Back to index) or the font is reopened,
-        so live edits do not outlive the consonant selection.
-        """
+        """Reset the per-consonant groups and disable them."""
         self.set_consonant_enabled(False)
         for x_spin, y_spin in self._base_offset_spins.values():
             x_spin.blockSignals(True)
@@ -599,12 +514,7 @@ class ControlsPane(QWidget):
             spin.blockSignals(False)
 
     def refresh_icons(self) -> None:
-        """Re-tint the Mark/Base offset axis icons for the active theme palette.
-
-        Called by the main window after a theme switch (which follows
-        `icons.clear_cache`) so the axis icons do not keep a stale tint from the
-        previous palette.
-        """
+        """Re-tint the axis icons for the active theme palette."""
         for icon_name, label in self._axis_icons:
             label.setPixmap(icons.icon(icon_name).pixmap(QSize(16, 16)))
 

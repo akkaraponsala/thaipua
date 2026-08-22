@@ -1,12 +1,4 @@
-"""In-place CFF-to-TrueType outline conversion for editable working copies.
-
-Composite installs require a `glyf` table, so a CFF-flavored source (.otf) is rebuilt
-as quadratic TrueType outlines at load time: every glyph's cubics are approximated by
-cu2qu (`MAX_APPROXIMATION_ERROR` font units of deviation), the `maxp`/`post` tables are
-swapped to their TrueType shapes, and `sfntVersion` flips to TrueType. Only the
-in-memory working copy changes — the source file on disk is never touched, and saved
-output becomes a `.ttf`. The routine follows fontTools' reference `otf2ttf` recipe.
-"""
+"""Convert CFF-flavored fonts to TrueType outlines in memory so installs work on `.otf` sources."""
 
 from __future__ import annotations
 
@@ -32,11 +24,9 @@ def has_cff_outlines(font: TTFont) -> bool:
 
 
 def convert_cff_to_truetype(font: TTFont) -> None:
-    """Replace the CFF outlines of the in-memory `font` with TrueType quadratics.
+    """Replace CFF outlines with TrueType quadratics, preserving metrics, `cmap`, and layout tables.
 
-    Glyph order, names, metrics tables, cmap, and GSUB/GPOS layout data pass through
-    unchanged; only outline storage and flavor markers are rebuilt. A no-op when the
-    font already has a `glyf` table.
+    A no-op when the font already carries a `glyf` table; only the in-memory copy changes.
     """
     if not has_cff_outlines(font):
         return
@@ -58,7 +48,7 @@ def convert_cff_to_truetype(font: TTFont) -> None:
 
 
 def _glyphs_to_quadratic(glyph_set: Any) -> dict[str, Any]:
-    """Redraw every glyph's contours through cu2qu into `TTGlyphPen` quadratics."""
+    """Redraw every glyph as quadratic outlines."""
     quad_glyphs: dict[str, Any] = {}
     for name in glyph_set:
         glyph = glyph_set[name]
@@ -70,7 +60,7 @@ def _glyphs_to_quadratic(glyph_set: Any) -> dict[str, Any]:
 
 
 def _update_hmtx_lsbs(font: TTFont, glyf: Any) -> None:
-    """Align each `hmtx` left side bearing with the recomputed contour `xMin`."""
+    """Align each `hmtx` left side bearing with the recomputed contour bounds."""
     hmtx = font["hmtx"]
     for name, glyph in glyf.glyphs.items():
         x_min = getattr(glyph, "xMin", None)
@@ -79,7 +69,7 @@ def _update_hmtx_lsbs(font: TTFont, glyf: Any) -> None:
 
 
 def _rebuild_maxp_for_truetype(font: TTFont, glyf: Any) -> None:
-    """Swap the version-0.5 CFF `maxp` for the full version-1.0 TrueType shape."""
+    """Swap the CFF `maxp` for the full TrueType version."""
     glyphs = list(glyf.glyphs.values())
     maxp = newTable("maxp")
     maxp.tableVersion = 0x00010000
@@ -96,7 +86,7 @@ def _rebuild_maxp_for_truetype(font: TTFont, glyf: Any) -> None:
 
 
 def _rebuild_post_for_truetype(font: TTFont, glyph_order: list[str]) -> None:
-    """Point `post` at format 2.0 carrying the glyph names; drop names on overflow."""
+    """Rebuild `post` with glyph names, dropping them on overflow."""
     post = font["post"]
     post.formatType = _POST_FORMAT_WITH_NAMES
     post.extraNames = []

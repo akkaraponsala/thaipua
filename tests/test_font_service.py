@@ -52,7 +52,6 @@ def test_occupied_pua_chars_scans_the_font_cmap() -> None:
 
 
 def test_component_boxes_are_empty_without_a_glyf_table() -> None:
-    """CFF/OTF fonts carry no component structure; a mapped PUA slot still renders."""
     spec = CompositeSpec(pua_code=0xE000, cons_uni=0x0E01)
     service = _service_with_font({0xE000: "foreign_glyph"}, glyf=None)
     assert service._component_boxes("foreign_glyph", spec) == []
@@ -61,7 +60,6 @@ def test_component_boxes_are_empty_without_a_glyf_table() -> None:
 def test_ensure_pua_map_bootstraps_an_empty_map_and_never_touches_existing(
     tmp_path: Path,
 ) -> None:
-    """An existing mapping file is loaded as-is — the user owns the static map."""
     service = FontService()
     map_path = tmp_path / "pua.json"
     service.set_pua_map_path(str(map_path))

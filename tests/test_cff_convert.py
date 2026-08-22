@@ -1,9 +1,4 @@
-"""Integration tests for in-memory CFF-to-TrueType conversion.
-
-Builds a minimal real `.otf` (CFF outlines) via fontTools' `FontBuilder`, then verifies
-the conversion flips the working copy to TrueType outlines and that the composite
-install pipeline behaves identically to a native TTF source.
-"""
+"""Integration tests for in-memory CFF-to-TrueType conversion using a built `.otf` fixture."""
 
 from __future__ import annotations
 

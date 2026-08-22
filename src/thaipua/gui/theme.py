@@ -1,17 +1,4 @@
-"""Light/Dark/System theme integration via PyQtDarkTheme.
-
-qdarktheme supplies a Material palette for its three theme names — `dark`, `light`, and
-`auto` (the resolved OS theme); `apply_theme` installs the merged stylesheet plus the
-matching `Palette`, resolving `SYSTEM` via `darkdetect` so both agree on a concrete
-`light`/`dark` token. Custom-painted surfaces the global stylesheet cannot reach (grid
-cells, the glyph canvas, the tinted toolbar/pane icons) read `get_palette()` so they stay
-consistent after every swap.
-
-App-scoped object-name-tagged widgets (`#PaneHeader`, `#MetaValue`, `QFrame#Divider`)
-get `_local_overrides` on top of qdarktheme's defaults. The user-selected `ThemeMode` is
-persisted to `settings.json` by `load_theme_mode()` / `save_theme_mode()`, round-tripping
-the `theme` key while preserving sibling keys.
-"""
+"""Light/dark/system theming with persisted mode selection."""
 
 from __future__ import annotations
 
@@ -30,12 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class ThemeMode(Enum):
-    """The three selectable theme modes offered by the Settings dialog.
-
-    The enum value is the string qdarktheme accepts as its `theme` argument (`dark`,
-    `light`, `auto`), so `apply_theme` can forward a resolved mode straight to
-    `qdarktheme.load_stylesheet`.
-    """
+    """Selectable theme modes; values match the qdarktheme theme names."""
 
     LIGHT = "light"
     DARK = "dark"
@@ -47,13 +29,7 @@ DEFAULT_THEME_MODE: ThemeMode = ThemeMode.DARK
 
 @dataclass(frozen=True, slots=True)
 class Palette:
-    """The color tokens consumed by custom-painted surfaces for one theme.
-
-    Mirrors qdarktheme's Material tokens for each theme so grid cells, the glyph canvas,
-    and toolbar icons read identically to the global stylesheet. `ICON_FG` is the icon
-    stroke tint for ordinary button surfaces; `GLYPH_FILL`/`GLYPH_PEN` are the preview
-    glyph body/outline colors.
-    """
+    """Color tokens consumed by custom-painted surfaces for one theme."""
 
     BG_APP: str
     BG_PANE: str
@@ -122,34 +98,19 @@ def get_palette() -> Palette:
 
 
 def current_theme_mode() -> ThemeMode:
-    """Return the user-selected theme mode (`LIGHT`, `DARK`, or `SYSTEM`).
-
-    This is the mode the Settings dialog radio group should reflect; it may be `SYSTEM`
-    even though the *effective* palette is `DARK`/`LIGHT`. Use `resolved_theme_mode()`
-    for the concrete theme driving the stylesheet.
-    """
+    """Return the user-selected theme mode, which may be `SYSTEM`."""
     return _active_mode
 
 
 def resolved_theme_mode(mode: ThemeMode = DEFAULT_THEME_MODE) -> ThemeMode:
-    """Return the concrete `LIGHT`/`DARK` mode that `mode` resolves to.
-
-    `SYSTEM` is resolved via `darkdetect` (falling back to `DEFAULT_THEME_MODE` when
-    detection fails); `LIGHT`/`DARK` pass through unchanged.
-    """
+    """Resolve `mode` to the concrete light/dark mode driving the stylesheet."""
     if mode is not ThemeMode.SYSTEM:
         return mode
     return resolve_system_theme()
 
 
 def resolve_system_theme(default: ThemeMode = DEFAULT_THEME_MODE) -> ThemeMode:
-    """Resolve the host OS theme to a concrete `LIGHT`/`DARK` mode.
-
-    Mirrors `qdarktheme`'s internal probe (`darkdetect.theme()` returns `"Dark"`/
-    `"Light"`/`None`) so the custom palette and qdarktheme's stylesheet agree on a
-    single concrete token. A failed or unavailable probe yields `default` so the UI
-    never breaks in a headless or undetectable environment.
-    """
+    """Resolve the host OS theme to a concrete mode, defaulting when detection fails."""
     try:
         import darkdetect
     except Exception:
@@ -200,14 +161,9 @@ QFrame#Divider {{ background-color: {palette.BORDER}; }}
 
 
 def apply_theme(app: QApplication | None = None, mode: ThemeMode = DEFAULT_THEME_MODE) -> ThemeMode:
-    """Install qdarktheme's stylesheet plus local overrides for `mode`.
+    """Install the stylesheet and palette for `mode`; return the resolved concrete mode.
 
-    Resolves `SYSTEM` to the host OS theme (via `darkdetect`) so the active palette and
-    the qdarktheme stylesheet always share a concrete `dark`/`light` token, switches
-    `_active_palette`/`_active_mode`, and sets the merged stylesheet on the
-    `QApplication`. `app=None` defaults to `QApplication.instance()` and raises
-    `RuntimeError` when none exists. `SYSTEM` resolves one-shot at call time; call again
-    to update if the OS theme changes later. Returns the concrete `LIGHT`/`DARK` mode.
+    `SYSTEM` resolves one-shot at call time.
     """
     global _active_palette
     global _active_mode
@@ -237,13 +193,7 @@ def _theme_mode_from_value(value: str) -> ThemeMode:
 
 
 def load_theme_mode(path: str | Path | None = None) -> ThemeMode:
-    """Load the persisted theme mode from `settings.json`.
-
-    A missing or unreadable file, a non-dict JSON payload, or an unrecognized `theme`
-    value all fall back to `DEFAULT_THEME_MODE` so a corrupt or absent preferences file
-    never blocks startup. `path=None` defaults to `DEFAULT_SETTINGS_PATH` under the per-
-    user app-data directory.
-    """
+    """Load the persisted theme mode from `settings.json`, defaulting on any failure."""
     settings_path = Path(path) if path is not None else Path(DEFAULT_SETTINGS_PATH)
     if not settings_path.is_file():
         return DEFAULT_THEME_MODE
@@ -262,12 +212,7 @@ def load_theme_mode(path: str | Path | None = None) -> ThemeMode:
 
 
 def save_theme_mode(mode: ThemeMode, path: str | Path | None = None) -> None:
-    """Persist `mode` to `settings.json` under the `theme` key.
-
-    Preserves any sibling keys already in the file by reading the current contents first
-    and merging. `path=None` defaults to `DEFAULT_SETTINGS_PATH` under the per-user app-
-    data directory.
-    """
+    """Persist `mode` to `settings.json`, preserving sibling keys."""
     settings_path = Path(path) if path is not None else Path(DEFAULT_SETTINGS_PATH)
     data = {}
     if settings_path.is_file():

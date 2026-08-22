@@ -1,15 +1,4 @@
-"""In-memory application state and offset bookkeeping for the desktop GUI.
-
-`AppState` is the single mutable object the main window swaps across panes. All
-functions here operate on `AppState`, `PlacementSettings`, or `CompositeSpec` and are
-deliberately PySide6-free so they stay unit-testable without a `QApplication`. Widgets
-read through the main window and never mutate state directly.
-
-Mark Offset and Base Offset are independent surfaces here, mirroring
-`ConsonantSettings`: the Mark Offset functions read/write only the per-glyph
-`mark_offsets`/`combo_offsets` tiers, the Base Offset functions only `base_offsets` —
-never the two together. Tier resolution lives in `ConsonantSettings.offset_for`.
-"""
+"""Mutable application state plus helpers reading and writing placement-settings tiers."""
 
 from __future__ import annotations
 
@@ -50,13 +39,7 @@ GRID_PAGE_SIZE = GRID_COLUMNS * GRID_ROWS
 
 
 class MarkCategory(Enum):
-    """The right-pane radio category a selected PUA glyph maps to.
-
-    - `TONE_MARK` — consonant + tone only, or consonant + above vowel + tone; the user
-      can switch to `ABOVE_VOWEL` for the same spec to edit the vowel's own offset.
-    - `ABOVE_VOWEL` — consonant + above vowel only.
-    - `BELOW_VOWEL` — consonant + below vowel only.
-    """
+    """Mark role selected in the controls pane for offset editing."""
 
     TONE_MARK = "tone_mark"
     ABOVE_VOWEL = "above_vowel"
@@ -75,20 +58,15 @@ SUB_ROLE_TO_CATALOG_KEY: dict[str, str] = {
     SUB_BELOW_VOWEL: "below_vowels",
 }
 SNAP_LABELS: dict[str, str] = {
-    SNAP_TONE_TO_ABOVE: "Tone Mark -> Above Vowel",
-    SNAP_ABOVE_TO_CONS: "Above Vowel -> Consonant",
-    SNAP_BELOW_TO_CONS: "Below Vowel -> Consonant",
+    SNAP_TONE_TO_ABOVE: "Tone Mark → Above Vowel",
+    SNAP_ABOVE_TO_CONS: "Above Vowel → Consonant",
+    SNAP_BELOW_TO_CONS: "Below Vowel → Consonant",
 }
 
 
 @dataclass(slots=True)
 class AppState:
-    """Mutable GUI state: loaded font, settings being edited, PUA map, selection.
-
-    The PUA map's file path is owned by `FontService.pua_map_path`, not this dataclass.
-    `settings` uses defaults until a font is loaded. `dirty` covers pending
-    `settings`/`pua_map`/composite edits.
-    """
+    """Central mutable GUI state shared across panes."""
 
     font_path: str | None = None
     pua_map: dict[str, str] = field(default_factory=dict)
@@ -110,14 +88,7 @@ def inferable_consonants() -> list[int]:
 
 
 def infer_category(spec: CompositeSpec) -> MarkCategory | None:
-    """Return the radio category implied by `spec`'s mark composition.
-
-    A spec carrying both an above vowel and a tone mark defaults to `TONE_MARK` (the
-    visible topmost mark in the stack); the user can switch to `ABOVE_VOWEL` via the
-    radio group to edit the vowel's own offset independently. Returns `None` for a base
-    consonant with no vowel/tone suffix; such specs are not editable from the controls
-    pane.
-    """
+    """Return the controls category implied by a spec's marks, or `None` for plain consonants."""
     has_above = spec.above_uni is not None
     has_below = spec.below_uni is not None
     has_tone = spec.tone_uni is not None
@@ -131,13 +102,7 @@ def infer_category(spec: CompositeSpec) -> MarkCategory | None:
 
 
 def combo_key_for(spec: CompositeSpec) -> str | None:
-    """Return the canonical combination key for `spec`'s marks.
-
-    Marks are sorted ascending by codepoint and concatenated; multi-mark specs (two or
-    more marks) yield their combo key, everything else yields `None` so callers can
-    short-circuit combination lookups (matching `ThaiPuaFontGenerator._combo_key`
-    exactly).
-    """
+    """Return the spec's canonical combination key, or `None` for fewer than two marks."""
     cps = [c for c in [spec.below_uni, spec.above_uni, spec.tone_uni] if c]
     if len(cps) < 2:
         return None
@@ -145,13 +110,7 @@ def combo_key_for(spec: CompositeSpec) -> str | None:
 
 
 def categories_for(spec: CompositeSpec) -> frozenset[MarkCategory]:
-    """Return the Mark Offset radio categories enabled by `spec`'s marks.
-
-    A category is enabled only when the spec carries the mark role that category edits:
-    `TONE_MARK` needs a tone codepoint, `ABOVE_VOWEL` an above vowel, `BELOW_VOWEL` a
-    below vowel. Combined specs (e.g. above-plus-tone) enable one category per present
-    mark. Returns an empty frozenset for a consonant-only spec.
-    """
+    """Return the offset-editing categories enabled by a spec's marks."""
     cats: set[MarkCategory] = set()
     if spec.tone_uni:
         cats.add(MarkCategory.TONE_MARK)
@@ -188,11 +147,7 @@ def _mark_count(spec: CompositeSpec) -> int:
 
 
 def current_mark_offset(spec: CompositeSpec, settings: PlacementSettings, *, category: MarkCategory | None) -> Offset:
-    """Resolve the per-glyph Mark Offset override for `spec`, *ignoring* `base_offsets`.
-
-    Single-mark glyphs return the generic `mark_offsets[role][mark]`; multi-mark glyphs
-    return their own `combo_offsets[combo_key][role]`.
-    """
+    """Return the per-glyph offset override for the selected category, excluding base offsets."""
     resolved = category if category is not None else infer_category(spec)
     if resolved is None:
         return Offset()
@@ -220,12 +175,10 @@ def current_mark_offset(spec: CompositeSpec, settings: PlacementSettings, *, cat
 def apply_offset(
     spec: CompositeSpec, settings: PlacementSettings, x: int, y: int, *, category: MarkCategory | None
 ) -> None:
-    """Commit an `(x, y)` offset for `spec` into `settings` (mutates in place).
+    """Commit an `(x, y)` offset override for `spec` under the selected category.
 
-    Single-mark glyphs write the generic `mark_offsets[role][mark_uni]`; multi-mark
-    glyphs write `combo_offsets[combo_key][role]`. A zero delta clears the entry so
-    the cluster resolves to base-only placement. `settings.consonants` is auto-seeded
-    when absent.
+    Writes the mark tier for single-mark glyphs and the combo tier for multi-mark
+    glyphs; a zero delta clears the entry.
     """
     resolved = category if category is not None else infer_category(spec)
     if resolved is None:
@@ -259,11 +212,7 @@ def apply_offset(
 def glyph_substitution_candidates(
     codepoint: int | None, role: str, catalog: Mapping[str, Sequence[GlyphSubstitution]]
 ) -> list[str]:
-    """Return the ordered, deduped glyph names offered for `role`'s substitution combo.
-
-    `codepoint=None` yields an empty list. The list excludes the leading "(no override)"
-    UI sentinel — that entry is appended by the controls pane.
-    """
+    """List candidate glyph names for a role's substitution combo, deduplicated in catalog order."""
     cat_key = SUB_ROLE_TO_CATALOG_KEY.get(role)
     if cat_key is None or codepoint is None:
         return []
@@ -284,13 +233,7 @@ def glyph_substitution_candidates(
 
 
 def present_roles_for(spec: CompositeSpec) -> frozenset[str]:
-    """Return the raw mark-role set present in `spec` for substitution context.
-
-    This is the literal set — the vowel-family canonicalization (dropping `tone_mark`
-    when a vowel is present) is applied downstream by `apply_glyph_substitution` and
-    `ConsonantSettings.substitution_for`, so callers should pass this value through
-    unchanged.
-    """
+    """Return the literal mark-role set carried by a spec, prior to canonicalization."""
     roles: set[str] = set()
     if spec.tone_uni:
         roles.add(SUB_TONE_MARK)
@@ -315,20 +258,11 @@ def current_glyph_substitution(
 def apply_glyph_substitution(
     codepoint: int, cons_uni: int, glyph_name: str | None, settings: PlacementSettings, *, conditions: frozenset[str]
 ) -> None:
-    """Set or clear the `codepoint` substitution rule for `cons_uni` in `settings`.
+    """Set or clear the substitution rule matching the canonicalized conditions.
 
-    A non-empty `glyph_name` installs/replaces the rule whose `conditions` equals the
-    supplied `conditions`; an empty/`None` removes it. Other rules for the same
-    codepoint are preserved, accumulating one per context. Mutates
-    `consonants[cons_uni].glyph_substitutions[codepoint]` in place (seeding on first
-    install, clearing the codepoint list when it empties).
-
-    `conditions` is canonicalized before storage by `context_canonicalizer(codepoint)`,
-    so writes from contexts sharing one substitution slot address it and the latest
-    write wins: a tone-mark codepoint collapses the below-vowel family into the
-    tone-only family; an ascender-protruding consonant (e.g. ฬ) collapses every
-    above-stack context into `{above_vowel, tone_mark}`; every other consonant and
-    vowel codepoint drops `tone_mark` within any vowel family.
+    An empty `glyph_name` removes the matching rule and keeps sibling rules. Conditions
+    are canonicalized by the codepoint's category, so writes from contexts sharing one
+    substitution slot address the same rule.
     """
     conditions = context_canonicalizer(codepoint)(conditions)
     cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
@@ -353,12 +287,7 @@ def current_snap(cons_uni: int, snap_name: str, settings: PlacementSettings) -> 
 
 
 def apply_snap(cons_uni: int, snap_name: str, enabled: bool, gap: int, settings: PlacementSettings) -> None:
-    """Set or clear the `snap_name` snap for `cons_uni` in `settings`.
-
-    A disabled snap is cleared entirely (the composer treats an absent snap and an
-    explicitly disabled snap identically), keeping the in-memory map free of no-op
-    entries. Enabling records a `SnapConfig(enabled=True, gap)`.
-    """
+    """Enable a snap with its gap, or clear it entirely when disabled."""
     cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
     if not enabled:
         cs.snap_configs.pop(snap_name, None)
@@ -372,12 +301,7 @@ def current_base_offset(cons_uni: int, role: str, settings: PlacementSettings) -
 
 
 def apply_base_offset(cons_uni: int, role: str, x: int, y: int, settings: PlacementSettings) -> None:
-    """Set or clear the `role` base offset for `cons_uni` in `settings`.
-
-    A `(0, 0)` delta is cleared (the composer's `offset_for` returns `Offset(0, 0)` when
-    a role is absent from `base_offsets`, and `_base_offsets_to_dict` omits zero
-    entries), keeping the in-memory map free of no-op overrides.
-    """
+    """Commit a base-offset delta for `role`, clearing zero deltas."""
     cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
     if x == 0 and y == 0:
         cs.base_offsets.pop(role, None)
@@ -386,11 +310,7 @@ def apply_base_offset(cons_uni: int, role: str, x: int, y: int, settings: Placem
 
 
 def group_composites_by_consonant(pua_map: dict[str, str]) -> dict[int, list[CompositeSpec]]:
-    """Return a `cons_uni -> [CompositeSpec, ...]` index over `pua_map`.
-
-    Specs per consonant are sorted ascending by `pua_code` so the PUA page grid stays
-    deterministic across mapping reloads.
-    """
+    """Index composite specs by consonant, each list sorted ascending by PUA codepoint."""
     out: defaultdict[int, list[CompositeSpec]] = defaultdict(list)
     for spec in iter_composite_specs(pua_map):
         out[spec.cons_uni].append(spec)

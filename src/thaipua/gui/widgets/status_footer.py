@@ -8,11 +8,7 @@ from PySide6.QtWidgets import QStatusBar, QWidget
 
 
 class StatusBar(QStatusBar):
-    """The footer status bar.
-
-    Shows the loaded source font's basename (or `—` when unloaded), with a `*` marker
-    appended when unsaved edits exist.
-    """
+    """Footer status bar showing the loaded font name and unsaved-changes marker."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Initialize the footer with no font and no unsaved edits."""

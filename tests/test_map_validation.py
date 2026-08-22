@@ -17,7 +17,7 @@ def _context(
     cmap: dict[int, str] | None = None,
     glyf: dict[str, bool] | None = None,
 ) -> PuaSlotContext:
-    """Build a slot context from plain dicts (`None` cmap/glyf means absent)."""
+    """Build a slot context from plain dicts."""
     glyf_table: FakeGlyf | None = None
     if glyf is not None:
         glyf_table = make_glyf(**glyf)

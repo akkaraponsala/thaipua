@@ -16,20 +16,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True, frozen=True)
 class PuaEncodingMap:
-    """A longest-match-first PUA substitution pattern paired with its lookup table."""
+    """Longest-match-first substitution pattern paired with its lookup table."""
 
     pattern: re.Pattern[str]
     table: dict[str, str]
 
 
 def load_pua_map_dict(dict_path: str | Path) -> dict[str, str]:
-    """Read a Thai-to-PUA JSON mapping file.
-
-    Returns an empty dict when the file is missing or cannot be parsed. Entries whose
-    key is not a non-empty string, or whose value is not a single PUA character, are
-    logged and skipped — never coerced, since a `str()`-cast literal like "57345"
-    would silently break the encode and decode tables downstream.
-    """
+    """Read a Thai-to-PUA mapping file, skipping malformed entries; return an empty dict on failure."""
     logger.info("Loading PUA map: '%s'", dict_path)
     path = Path(dict_path)
     if not path.exists():
@@ -55,10 +49,7 @@ def load_pua_map_dict(dict_path: str | Path) -> dict[str, str]:
 
 
 def load_encoding_map(dict_path: str | Path) -> PuaEncodingMap | None:
-    """Compile a Thai-to-PUA JSON map into a longest-match-first substitution pattern.
-
-    Returns `None` when the map cannot be loaded.
-    """
+    """Compile the mapping file into a longest-match-first encoder; return `None` when unavailable."""
     map_data = load_pua_map_dict(dict_path)
     if not map_data:
         return None
@@ -69,10 +60,7 @@ def load_encoding_map(dict_path: str | Path) -> PuaEncodingMap | None:
 
 
 def load_decode_table(dict_path: str | Path) -> dict[int, str] | None:
-    """Invert a Thai-to-PUA JSON map into a PUA-codepoint-to-Thai decode table.
-
-    Returns `None` when the map cannot be loaded.
-    """
+    """Invert the mapping file into a PUA-codepoint-to-Thai table; return `None` when unavailable."""
     data = load_pua_map_dict(dict_path)
     if not data:
         return None
@@ -82,11 +70,7 @@ def load_decode_table(dict_path: str | Path) -> dict[int, str] | None:
 
 
 def normalize_sara_am(content: str) -> str:
-    """Rewrite SARA AM combinations in content into NIKHAHIT + SARA AA sequences.
-
-    Flattening the precomposed SARA AM (U+0E33) and its tone-bearing variants into the
-    two-codepoint form lets them match the individual entries in a PUA mapping.
-    """
+    """Rewrite SARA AM combinations into NIKHAHIT + SARA AA sequences."""
     for old_char, new_char in SARA_AM_REPLACEMENTS:
         content = content.replace(old_char, new_char)
     return content
@@ -99,5 +83,5 @@ def _apply_encoding(content: str, encoding_map: PuaEncodingMap) -> str:
 
 
 def build_encode_transform(encoding_map: PuaEncodingMap) -> Callable[[str], str]:
-    """Return a callable that encodes Thai text to PUA codepoints via encoding_map."""
+    """Return a callable that encodes Thai text to PUA codepoints via `encoding_map`."""
     return lambda content: _apply_encoding(content, encoding_map)

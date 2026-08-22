@@ -1,16 +1,4 @@
-"""Middle pane: *Glyph Preview* — codepoint/glyph metadata plus the painting canvas.
-
-The viewport paints a fontTools-derived `QPainterPath` at a per-font fit-to-cell scale
-that is independent of any single glyph's bounding box, so the canvas scale and the
-baseline device-Y stay identical across every PUA glyph of one font (see `_Viewport` for
-the transform and `_view_params` for the fit math). Typographic guides — baseline,
-cap-height, x-height, and the advance width — run edge to edge of the canvas; composite
-glyphs also show each placed component's bounding box.
-
-Pan with left-drag, zoom with the wheel (cursor-anchored), double-click resets the view.
-The pane is a pure display surface driven by the main window through `set_metadata` /
-`set_render` / `clear()`.
-"""
+"""Middle pane rendering the glyph canvas with typographic guides and pan/zoom navigation."""
 
 from __future__ import annotations
 
@@ -50,20 +38,10 @@ def _codepoint_label(codepoint: int) -> str:
 
 
 class _Viewport(QWidget):
-    """A custom-painted canvas rendering a glyph path with typographic guides.
+    """Zoomable, pannable canvas drawing the glyph with metric guides.
 
-    The view is governed by three pieces of state:
-
-    - `_view_params()` derives a per-font `base_scale` from the font's metrics
-      (`units_per_em`, ascender/descender) and the current widget size — never from an
-      individual glyph's `bbox` — so the scale is the same for every glyph of one font.
-    - `_zoom` is a user-controlled multiplier applied on top of `base_scale`.
-    - `_pan` is a device-space offset accumulated by left-button dragging.
-
-    The font -> device mapping is `device = view_center + pan + (font - center) *
-    base_scale * _zoom` (with the y axis flipped), so the metric box is centered
-    vertically and the glyph's content extent is centered horizontally, then the user
-    pan/zoom is applied on top of that centered fit.
+    The base fit derives from font metrics only, so scale and baseline stay consistent
+    across every glyph of one font; user zoom multiplies it and drag accumulates pan.
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -80,10 +58,7 @@ class _Viewport(QWidget):
         self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def set_glyph(self, render: GlyphRender | None, path: QPainterPath | None) -> None:
-        """Replace the displayed glyph and keep the typographic origin stable.
-
-        The view is panned only when the new glyph bbox falls outside the viewport.
-        """
+        """Display a new glyph, keeping the typographic origin stable when possible."""
         old_origin = None
         if self._has_drawable_glyph():
             old_origin = self._device_point_for_font(0.0, 0.0)
@@ -120,21 +95,7 @@ class _Viewport(QWidget):
         )
 
     def _view_params(self) -> tuple[float, float, float, float] | None:
-        """Compute the per-paint view parameters.
-
-        Returns `(base_scale, glyph_center_x, metric_center_y, effective_scale)`:
-
-        - `base_scale` is the per-font fit (independent of `bbox`), so the canvas scale
-          stays consistent across every glyph of the same font.
-        - `glyph_center_x` centers the glyph's horizontal extent
-          `[min(xMin, 0), max(xMax, advance)]` within the canvas (varies per glyph, by
-          design — the user wants each glyph centered).
-        - `metric_center_y` centers the vertical metric box
-          `[descender - pad, ascender + pad]` (constant per font).
-        - `effective_scale = base_scale * _zoom` (device pixels per font unit).
-
-        `None` when no glyph / `units_per_em == 0`.
-        """
+        """Fit the font metric box to the widget, returning scale and centering parameters."""
         render = self._render
         if render is None or render.units_per_em == 0:
             return None
@@ -156,13 +117,7 @@ class _Viewport(QWidget):
         return (base_scale, glyph_cx, metric_cy, base_scale * self._zoom)
 
     def _glyph_bbox_font(self) -> tuple[float, float, float, float] | None:
-        """Return the glyph ink bounding box in font space.
-
-        Uses `render.bbox` and the placed component boxes; the path bounding rect is a
-        fallback when no metric boxes are available. The advance width and the origin
-        are excluded on purpose so visibility clamping reacts to the drawn outline
-        only.
-        """
+        """Union the glyph's ink bounds in font space, excluding origin and advance."""
         render = self._render
         if render is None:
             return None
@@ -236,11 +191,7 @@ class _Viewport(QWidget):
         )
 
     def _ensure_glyph_visible(self, margin: float = 0.0) -> bool:
-        """Adjust `_pan` only when the glyph bbox is outside the viewport.
-
-        Returns `True` when pan was adjusted. A bbox wider/taller than the viewport is
-        only clamped when it falls completely outside the corresponding edge.
-        """
+        """Pan minimally when the glyph bbox leaves the viewport; return True when adjusted."""
         if not self._has_drawable_glyph():
             return False
         bbox = self._glyph_bbox_font()
@@ -345,14 +296,7 @@ class _Viewport(QWidget):
         descender: int,
         advance: int,
     ) -> None:
-        """Draw the baseline/cap/x-height/advance guides in device space.
-
-        Drawn before the font transform is applied so the horizontal guides run edge to
-        edge across the full widget width and the advance line runs the full widget
-        height — the canvas may be wider than the fitted glyph region when the fit is
-        height-limited. The font-space values are mapped through the same view transform
-        used for the glyph so guides move/scale correctly with pan/zoom.
-        """
+        """Draw full-width baseline, height, and advance guides in device space."""
 
         def y_dev(font_y: int) -> float:
             """Map a font-space `font_y` to its device Y under the current view."""
@@ -382,13 +326,7 @@ class _Viewport(QWidget):
     def _draw_component_boxes(
         self, painter: QPainter, component_boxes: list[ComponentBox] | None, eff_scale: float
     ) -> None:
-        """Draw each placed component's bounding box in the shared BBox color.
-
-        Drawn after the glyph path so the boxes stay visible even when a component's
-        fill exactly hugs its bounds (e.g. Sarabun's tone marks). The pen is scaled
-        inversely so the outline stays a constant device-pixel width regardless of the
-        current zoom.
-        """
+        """Outline each placed component box at a constant device-pixel width."""
         if component_boxes is None:
             return
         for component_box in component_boxes:
@@ -414,11 +352,7 @@ class _Viewport(QWidget):
         event.accept()
 
     def _apply_zoom(self, cursor: QPointF, factor: float) -> None:
-        """Scale `_zoom` by `factor` while keeping `cursor` anchored in device space.
-
-        The pan offset is adjusted so the device point under the cursor before the zoom
-        stays under the cursor afterwards — the "zoom where I point" feel.
-        """
+        """Scale the zoom by `factor` while keeping `cursor` anchored in device space."""
         new_zoom = max(_MIN_ZOOM, min(_MAX_ZOOM, self._zoom * factor))
         if new_zoom == self._zoom:
             return
@@ -524,9 +458,5 @@ class GlyphPreviewPane(QWidget):
         self._viewport.set_glyph(None, None)
 
     def refresh(self) -> None:
-        """Repaint the canvas so it picks up the active theme palette.
-
-        Called by the main window after a theme switch (`paintEvent` reads the palette
-        at draw time, so a plain `update()` repaint suffices).
-        """
+        """Repaint the canvas for the active theme palette."""
         self._viewport.update()

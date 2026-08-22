@@ -1,10 +1,4 @@
-"""Shared filesystem locations.
-
-User-mutable runtime files (`settings.json`, `pua_mapping.json`, `profiles/`) and the
-bundled `assets/` tree live under a base directory dispatched by `is_standalone_build`:
-the repository root when run from source, or the folder holding the running executable
-under a `pyside6-deploy` standalone build so the travelled `.exe` stays self-contained.
-"""
+"""Filesystem locations for runtime data and bundled assets."""
 
 from __future__ import annotations
 
@@ -18,11 +12,7 @@ SARA_AM_REPLACEMENTS: list[tuple[str, str]] = [("่ำ", "ํ่า"), ("้ำ
 
 
 def is_standalone_build() -> bool:
-    """Return True when running as a packaged build.
-
-    Nuitka (used by `pyside6-deploy`) sets a `__compiled__` global rather than
-    `sys.frozen`, so both markers are checked.
-    """
+    """Return True when running as a packaged executable."""
     return bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
 
 
@@ -57,13 +47,7 @@ DEFAULT_SETTINGS_PATH: str = str(APP_DATA_DIR / "settings.json")
 
 
 def ensure_app_data_dirs(base_dir: Path | None = None) -> None:
-    """Materialize the runtime-data directories on demand.
-
-    Creates `base_dir` (or `APP_DATA_DIR`) and its `profiles/` subdirectory, and seeds a
-    starter `profiles/default.json` from the in-source empty settings when no default
-    profile exists yet. `base_dir` lets tests isolate directory creation under a
-    `tmp_path`.
-    """
+    """Create the runtime-data directories and seed the default profile when missing."""
     root = Path(base_dir) if base_dir is not None else APP_DATA_DIR
     root.mkdir(parents=True, exist_ok=True)
     profiles_dir = root / "profiles"
@@ -74,7 +58,7 @@ def ensure_app_data_dirs(base_dir: Path | None = None) -> None:
 
 
 def _seed_default_profile(path: Path) -> None:
-    """Write a starter `default.json` profile matching the settings schema."""
+    """Write a starter `default.json` profile."""
     import json
 
     from thaipua.core.fonttools.settings import default_placement_settings, settings_to_dict

@@ -1,11 +1,4 @@
-"""File-level codec pipeline for the Thai-to-PUA encode/decode toolset.
-
-Drives the in-memory transforms from `thaipua.core.encoding` against disk files. Each
-target file is routed to a game string-table transform or a plain-text transform
-depending on its extension. Source byte encodings are preserved on output (see
-`detect_text_encoding` for plain text and `ParsedStringTable.encoding` for string
-tables).
-"""
+"""Encode and decode files between Thai text and PUA codepoints, routing by extension."""
 
 from __future__ import annotations
 
@@ -41,12 +34,7 @@ def _decode_string_table_file(input_path: str | Path, output_path: str | Path, d
 
 
 def _write_string_table_file(entries_from_src: list[StringEntry], output_path: str | Path, encoding: str) -> None:
-    """Write `entries_from_src` to `output_path` in `encoding`.
-
-    When a transformed string is not encodable in `encoding` (only possible for mixed- or
-    corrupt-source tables), logs a warning and rewrites the table as UTF-8 instead of
-    failing the whole batch.
-    """
+    """Write transformed entries in `encoding`, falling back to UTF-8 when unencodable."""
     try:
         write_strings_file(entries_from_src, output_path, encoding=encoding)
     except UnicodeEncodeError:
@@ -57,11 +45,7 @@ def _write_string_table_file(entries_from_src: list[StringEntry], output_path: s
 
 
 def _process_text_file(input_path: Path, output_path: Path, transform_text: Callable[[str], str]) -> None:
-    """Transform a plain-text file.
-
-    On an un-encodable result, writes UTF-8 instead with a warning; read/write failures
-    are logged, not raised.
-    """
+    """Transform a plain-text file in its detected encoding, falling back to UTF-8 on write failure."""
     encoding = detect_text_encoding(input_path)
     logger.info("Processing file: '%s' (%s)", input_path, encoding)
     try:
@@ -92,10 +76,9 @@ def _process_files(
     string_table_handler: Callable[[Path, Path], None],
     transform_text: Callable[[str], str],
 ) -> None:
-    """Apply a transform to each target file, branching on string-table vs plain text.
+    """Route each target file to the matching handler, writing `<stem>_<suffix><ext>` outputs.
 
-    Missing files are skipped with a warning. output_suffix is inserted before the
-    extension in each output filename (e.g. "encoded" produces name_encoded.ext).
+    Missing files are skipped with a warning.
     """
     for target_path in target_files:
         input_path = Path(target_path)

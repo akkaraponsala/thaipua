@@ -1,9 +1,4 @@
-"""PySide6 desktop application entry point.
-
-`app.main` is the application's sole PySide6-importing entry point; the rest of the
-package (`thaipua.core`, `thaipua.gui.state`, `thaipua.gui.font_service`,
-`thaipua.gui.glyph_pen`) is GUI-free and stays unit-testable without a `QApplication`.
-"""
+"""PySide6 application entry point."""
 
 from __future__ import annotations
 
@@ -25,11 +20,7 @@ _LOGO_PATH: Path = ASSETS_DIR / "images" / "logo.png"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Create the `QApplication`, show the `MainWindow`, and run the event loop.
-
-    Materializes the runtime-data directory before the GUI opens so a writable home for
-    `settings.json`, `pua_mapping.json`, `profiles/`, and the log file exists on first run.
-    """
+    """Run the application: prepare data directories, then open the main window."""
     ensure_app_data_dirs()
     setup_logging()
     logger.info("Starting thaipua")

@@ -1,9 +1,4 @@
-"""PUA-map allocation and persistence for the Thai-to-PUA mapping file.
-
-Allocates a PUA codepoint for every consonant plus vowel/tone suffix combination, with
-one consonant's suffix variants occupying consecutive PUA codepoints so the mapping
-stays deterministic across runs.
-"""
+"""Allocate and persist PUA codepoints for every consonant-suffix combination."""
 
 from __future__ import annotations
 
@@ -70,12 +65,7 @@ THAI_SUFFIXES: list[str] = [
 
 
 def next_free_codepoint(start_pua: int, used_pua_chars: set[str]) -> int:
-    """Find the lowest free PUA codepoint at or above `start_pua`.
-
-    Raises:
-        RuntimeError: Every codepoint from `start_pua` through `PUA_RANGE_END` is
-            already in `used_pua_chars`.
-    """
+    """Return the lowest unused PUA codepoint at or above `start_pua`."""
     codepoint = start_pua
     while codepoint <= PUA_RANGE_END and chr(codepoint) in used_pua_chars:
         codepoint += 1
@@ -87,18 +77,10 @@ def next_free_codepoint(start_pua: int, used_pua_chars: set[str]) -> int:
 def allocate_consonant_block(
     consonant: str, suffixes: list[str], next_pua: int, used_pua_chars: set[str], mapped_thai_keys: set[str]
 ) -> tuple[dict[str, str], int]:
-    """Allocate PUA codepoints for every suffix variant of one consonant.
+    """Allocate consecutive codepoints for one consonant's suffix variants.
 
-    `used_pua_chars` is mutated in place as codepoints are allocated, and `next_pua` is
-    advanced past each allocation. Keys already present in `mapped_thai_keys` are
-    skipped individually.
-
-    Returns:
-        A tuple of (new Thai-key -> PUA-char entries, the next free codepoint after the
-        block).
-
-    Raises:
-        RuntimeError: The next free codepoint falls past `PUA_RANGE_END`.
+    Mutates `used_pua_chars` as codepoints are claimed; skips keys already present in
+    `mapped_thai_keys`. Returns the new entries and the next free codepoint.
     """
     block_entries = {}
     for suffix in suffixes:
@@ -136,12 +118,7 @@ def ensure_pua_map(
     start_pua: int = PUA_RANGE_START,
     reserved_pua_chars: set[str] | None = None,
 ) -> None:
-    """Load the PUA mapping at `path` and extend it with new consonant/suffix entries.
-
-    Walks `THAI_CONSONANTS` and `suffixes` in order, allocating consecutive PUA
-    codepoints per consonant block from `start_pua`. Already-mapped keys are skipped
-    individually. `reserved_pua_chars` are treated as in use by the allocation scan.
-    """
+    """Extend the stored mapping with allocations for all consonant blocks, reserving occupied codepoints."""
     current_mapping = load_pua_map_dict(path)
     mapped_thai_keys = set(current_mapping.keys())
     used_pua_chars = set(current_mapping.values())

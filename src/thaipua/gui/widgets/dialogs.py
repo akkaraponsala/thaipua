@@ -91,21 +91,12 @@ class FindSubstitutionDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    """Application preferences: live Light/Dark/System theme switch.
-
-    The theme radios apply the chosen `ThemeMode` immediately through an
-    `on_theme_changed` callback (wired by the main window to `apply_theme`, persistence,
-    and a pane/icon refresh).
-    """
+    """Application preferences with a live light/dark/system theme switch."""
 
     def __init__(
         self, parent: QWidget | None, *, current_mode: ThemeMode | None, on_theme_changed: ThemeCallback | None
     ) -> None:
-        """Build the preferences dialog.
-
-        `current_mode=None` defaults to `theme.current_theme_mode()`.
-        `on_theme_changed=None` leaves the radios inert (useful for tests/headless).
-        """
+        """Build the preferences dialog; `on_theme_changed=None` leaves the radios inert."""
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.resize(440, 260)

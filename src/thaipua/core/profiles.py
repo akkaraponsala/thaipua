@@ -1,20 +1,4 @@
-"""Per-font placement-profile resolution.
-
-A profile is a JSON file in the same shape as a `PlacementSettings` payload (see
-`thaipua.core.fonttools.settings`), resolved against the font being generated rather
-than supplied as a single shared file. For an input font at <...>/<stem>.ttf, tiers are
-checked in priority order:
-
-1. <profiles_dir>/<stem>.json
-2. <profiles_dir>/<family>.json, where <family> is the first hyphen-separated segment
-   of <stem>
-3. <profiles_dir>/default.json
-4. In-source empty defaults (`default_placement_settings`)
-
-The first tier whose file exists is used. A missing file at any tier is not treated as
-an error. An existing but malformed profile falls back to `load_placement_settings`'s
-own default behavior.
-"""
+"""Resolve per-font placement profiles through a tiered directory lookup."""
 
 from __future__ import annotations
 
@@ -30,26 +14,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True, frozen=True)
 class ResolvedProfile:
-    """The outcome of a per-font placement-profile lookup.
-
-    Attributes:
-        source: The profile file selected by the tiered lookup — the file the deltas
-            were loaded from when it parsed cleanly, or the matched-but-unreadable file
-            when `load_placement_settings` fell back to the in-source defaults. `None`
-            when no profile file matched.
-    """
+    """Profile outcome: the resolved settings and the matched file, when any."""
 
     settings: PlacementSettings
     source: Path | None
 
 
 def resolve_settings_profile(font_path: str | Path, *, profiles_dir: str | Path | None) -> ResolvedProfile:
-    """Resolve the placement profile for `font_path` via the tiered lookup.
+    """Resolve the highest-priority profile for `font_path`, falling back to in-source defaults.
 
-    Returns:
-        A `ResolvedProfile`. `source` stays set even when the matched file was
-        unreadable (`settings` then holds the in-source defaults) and is `None` only
-        when no tier matched.
+    Tiers check `<stem>.json`, then `<family>.json`, then `default.json`; `source` is
+    set even when a matched file was unreadable.
     """
     base_dir = Path(profiles_dir) if profiles_dir is not None else Path(DEFAULT_PROFILES_DIR)
     stem = Path(font_path).stem
@@ -66,11 +41,7 @@ def resolve_settings_profile(font_path: str | Path, *, profiles_dir: str | Path 
 
 
 def _extract_family(stem: str) -> str:
-    """Return the font-family segment of a font file stem.
-
-    A stem with a hyphen (e.g. Sarabun-Regular) yields the segment before the first
-    hyphen (Sarabun). A stem without one is returned unchanged.
-    """
+    """Return the family segment of a font-file stem, stripping any style suffix."""
     if "-" in stem:
         return stem.split("-", 1)[0]
     return stem

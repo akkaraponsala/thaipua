@@ -113,11 +113,16 @@ Don't commit these unless intentional. Tests isolate them via explicit `base_dir
 
 ## Coding Style & Naming Conventions
 
-- Python 3.12, 4-space indent, `snake_case` functions/modules, `PascalCase` classes. Ruff: `line-length 120`, double quotes, google docstring convention.
+- Python 3.12, 4-space indent, `snake_case` functions/modules, `PascalCase` classes. Ruff: `line-length 120`, double quotes.
 - Ruff `select`: `B, E, F, G, I, N, PT, UP, ERA, RUF, SIM`. `pyproject.toml` already extends `ignore-names` for Qt/fontTools camelCase (`paintEvent`, `addComponent`, `moveTo`, ...) — extend that list for new overrides instead of renaming.
 - mypy: `strict` + `disallow_untyped_defs`; `PySide6.*`, `fontTools.*`, `qdarktheme.*`, `darkdetect.*` are `ignore_missing_imports`.
 - Prefer typed exceptions (`StringTableError` subclasses) or `logging` over bare excepts; swallow errors only as an intentional fallback.
-- Docstrings, comments, and test names describe **current behavior only** — never implementation history (no "previously", "no longer", "unlike the old ..."). When behavior changes, rewrite the wording instead of annotating the change.
+- Docstring/comment style (house style, applies to all Python incl. tests):
+  - Module docstring = exactly **1 line** summarizing responsibility.
+  - Function/method docstrings start with an **imperative verb** (`Return`, `Resolve`, `Load`, `Install`, ...); state the contract — return semantics, fallbacks, side effects visible to callers — not internal mechanics.
+  - **Omit** when code/naming is already clear: trivial getters, enum members, protocol methods, tests whose name states the scenario. No Args/Returns/Raises boilerplate unless genuinely non-obvious.
+  - Inline comments only for non-obvious invariants; delete restating ones.
+  - Present tense, **current behavior only** — never implementation history (no "previously", "no longer", "unlike the old ..."). When behavior changes, rewrite the wording instead of annotating the change.
 - New placement feature checklist: role/constants in `fonttools/settings.py` (+ `specs.py` if categorization changes), handling in `composer.py`'s `_place_*` methods, UI in `widgets/controls_pane.py`, state glue following the `current_*` / `apply_*` pattern in `state.py`.
 
 ## Testing Guidelines

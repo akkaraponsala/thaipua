@@ -1,9 +1,4 @@
-"""Cached glyph bounding-box reading for composite-glyph generation.
-
-Bounding boxes are computed via `BoundsPen` over the font's glyph set, which
-transparently flattens nested component composites, and are cached per glyph name for
-the lifetime of a `BoundingBoxCache`.
-"""
+"""Cached glyph bounding-box lookup for placement calculations."""
 
 from __future__ import annotations
 
@@ -45,11 +40,7 @@ class BoundingBoxCache:
         self._cache: dict[str, BoundingBox | None] = {}
 
     def get_bounding_box(self, glyph_name: str | None) -> BoundingBox | None:
-        """Return the bounding box of `glyph_name`, computing it on first access.
-
-        Returns `None` for an empty name or a glyph that is absent from the font or has
-        no drawable contour.
-        """
+        """Return the cached bounds of `glyph_name`, or `None` when absent or undrawable."""
         if not glyph_name:
             return None
         if glyph_name in self._cache:
@@ -59,11 +50,7 @@ class BoundingBoxCache:
         return bounding_box
 
     def invalidate(self, glyph_name: str | None) -> None:
-        """Drop `glyph_name` from the cache so the next access recomputes it.
-
-        Call after a glyph's contours are replaced in place (e.g. a composite rebuilt at
-        an existing name) to avoid serving a stale bounding box.
-        """
+        """Drop `glyph_name`'s cached bounds so the next access recomputes them."""
         if glyph_name is not None:
             self._cache.pop(glyph_name, None)
 

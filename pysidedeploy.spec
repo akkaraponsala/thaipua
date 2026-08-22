@@ -1,99 +1,51 @@
 [app]
 
-# title of the thaipua desktop application.
 title = ThaiPUA
 
-# project root directory. empty defaults to the parent of `input_file`; we
-# pin it to `.` (this spec file's folder, the repo root) so `pyside6-deploy`
-# discovers the whole source tree (and resolves `assets/`, the bundled
-# include-data-dir, against it -- run `pyside6-deploy -c pysidedeploy.spec`
-# from this directory).
+# Repo root: lets pyside6-deploy discover the source tree and resolve assets/.
 project_dir = .
 
-# module entry point = `python -m thaipua` -> `thaipua.__main__:main` ->
-# `thaipua.app = main`, which constructs the `QApplication` and `MainWindow`.
-# resolved relative to `project_dir` (the repo root). point at the package
-# directory (not `__main__.py` itself) so nuitka treats it as a package
-# entry without emitting its `__main__` module warning.
+# Package entry (python -m thaipua → thaipua.app.main); a directory avoids
+# nuitka's __main__-module warning.
 input_file = src\thaipua
 
-# directory where the standalone `.dist/` bundle is generated. default would
-# drop it under `src/thaipua/deployment/`; we move it into `build/` at the
-# repo root so the .dist folder, build artifacts, and intermediates stay
-# out of the source tree.
+# .dist/ bundle lands under build/ at the repo root, out of the source tree.
 exec_directory = build
-
-# application icon, embedded into the .exe (windows = `--windows-icon-from-ico`).
-# nuitka 4.0+ accepts this .png and converts it to ico; if a future nuitka
-# version rejects png, convert `assets/images/logo.png` to `assets/images/logo.ico`
-# and point `icon` at it. the running app's window icon is set separately by
-# `_set_window_icon` in `thaipua.app` via `constants.assets_dir`.
-project_file = 
+project_file =
 icon = assets/images/logo.png
 
 [python]
 
-# python interpreter used to drive the build. empty lets `pyside6-deploy`
-# default to the interpreter running the tool, so both local builds
-# (`uv run ...`) and CI resolve the project's own venv without a hardcoded
-# machine-specific absolute path.
+# Must stay empty: uses the interpreter running pyside6-deploy (the project
+# venv via uv run, local and CI); a hardcoded path breaks other machines.
 python_path =
 
-# python packages to install for the build host. `pyside6-deploy` runs
-# nuitka to bundle pyside6; pin nuitka = =4.0 to match the spec the tool
-# ships with.
 packages = Nuitka==4.0
 
 [qt]
 
-# qml files to bundle. thaipua is a qtwidgets app (no qml), so leave empty.
-qml_files = 
+qml_files =
+excluded_qml_plugins =
 
-# excluded qml plugin binaries. no qml -- leave empty.
-excluded_qml_plugins = 
-
-# qt modules used. leave empty so `pyside6-deploy` auto-detects
-# (core, gui, widgets, svg) from the source-tree imports.
+# QtWidgets app: no QML; modules listed explicitly instead of auto-detect.
 modules = Core,Gui,Svg,Widgets
-
-# qt plugins used by the application. empty = auto-detect.
 plugins = accessiblebridge,egldeviceintegrations,generic,iconengines,imageformats,platforminputcontexts,platforms,platforms/darwin,platformthemes,styles,wayland-decoration-client,wayland-graphics-integration-client,wayland-shell-integration,xcbglintegrations
 
 [android]
 
-# thaipua is a desktop-only app; the [android] section is unused.
-wheel_pyside = 
-wheel_shiboken = 
-plugins = 
+# Desktop-only app; section unused.
+wheel_pyside =
+wheel_shiboken =
+plugins =
 
 [nuitka]
 
-# nuitka standalone build = produces a `ThaiPUA.dist/` folder holding the
-# .exe alongside all python/qt/dll dependencies -- the layout our
-# `is_standalone_build()` path dispatch keys off (`<exe-dir>/assets/`,
-# `<exe-dir>/settings.json`, `<exe-dir>/profiles/`, ...).
+# Standalone build: thaipua.dist/ holds the .exe plus all runtime deps;
+# runtime-data dispatch keys off <exe-dir>/assets, settings.json, profiles/.
 mode = standalone
 
-# extra nuitka flags beyond what `pyside6-deploy` already passes
-# (`--follow-imports`, `--enable-plugin = pyside6`, `--output-dir`, icon).
-# `--include-data-dir = assets=assets` copies the source-tree `assets/` folder
-# into `thaipua.dist/assets/` so `assets_dir` finds the bundled fonts,
-# and logo next to the .exe. `--noinclude-qt-translations` trims unused i18n
-# payloads; `--quiet` suppresses nuitka's verbose per-module progress log.
-# `--assume-yes-for-downloads` auto-accepts nuitka's prompts to fetch its
-# windowed helper tools (e.g. dependency walker for standalone/onefile on
-# windows), since `pyside6-deploy` runs nuitka non-interactively and would
-# otherwise answer "no" and abort the build.
-# `--output-filename = ThaiPUA.exe` controls the exe name: nuitka names the
-# executable after the entry script (`input_file` = `src/thaipua` directory ->
-# its `__main__.py` -> `__main__.exe`), and `pyside6-deploy` does not rename
-# it. since the app window title is also `thaipua`, pin the exe to match the
-# bundle folder `build/thaipua.dist/`.
-# `--output-folder-name = thaipua` fixes the `.dist/` folder name to `thaipua`
-# instead of nuitka's default `__main__` (derived from `__main__.py`), so it
-# matches the bundle `pysidedeploy` looks for via `source_file.stem`.
-# `--noinclude-dlls=Qt6Qml*.dll` drops the qml runtime that nuitka's dependency
-# scan pulls in transitively; the app is qtwidgets-only (verified by running
-# the bundle without this dll).
+# --include-data-dir bundles assets/ next to the .exe;
+# --output-filename/--output-folder-name pin ThaiPUA.exe/thaipua.dist/
+# (nuitka would default to __main__.exe/__main__); the rest trims unused
+# payloads and keeps the non-interactive build quiet.
 extra_args = --quiet --noinclude-qt-translations --noinclude-dlls=Qt6Qml*.dll --include-data-dir=assets=assets --assume-yes-for-downloads --output-filename=ThaiPUA.exe --output-folder-name=thaipua --windows-console-mode=disable
-

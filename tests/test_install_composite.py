@@ -1,9 +1,4 @@
-"""Integration tests for `ThaiPuaFontGenerator.install_composite` against a real font.
-
-Uses `assets/fonts/Sarabun-Regular.ttf` as the source font so classification,
-replace-in-place installs, locked-slot skips, and prefix persistence across a
-save/reload roundtrip are exercised end to end without PySide6.
-"""
+"""Integration tests for `ThaiPuaFontGenerator.install_composite` against the sample font."""
 
 from __future__ import annotations
 
@@ -28,7 +23,7 @@ def _first_free_pua_code(gen: ThaiPuaFontGenerator) -> int:
 
 
 def _claim_pua_slot(gen: ThaiPuaFontGenerator, codepoint: int, glyph_name: str) -> None:
-    """Map `codepoint` to `glyph_name` on every Unicode cmap subtable and the copy."""
+    """Map `codepoint` to `glyph_name` on every Unicode `cmap` subtable and the cached copy."""
     for table in gen.font["cmap"].tables:
         if table.isUnicode():
             table.cmap[codepoint] = glyph_name
@@ -68,7 +63,6 @@ def test_reinstall_replaces_in_place_under_the_same_name(generator: ThaiPuaFontG
 
 
 def test_locked_slot_is_skipped_without_writes(generator: ThaiPuaFontGenerator) -> None:
-    """A PUA codepoint claimed by an unknown simple glyph is locked."""
     cmap = generator.font.getBestCmap()
     if 0x0E01 not in cmap:
         pytest.skip("sample font has no ko-kai glyph")

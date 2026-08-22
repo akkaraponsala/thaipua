@@ -1,16 +1,4 @@
-"""Backend facade for the desktop GUI.
-
-`FontService` owns the live `ThaiPuaFontGenerator` and isolates every fontTools call:
-panes ask for opaque `(codepoint, glyph name, metrics)` results and never touch `TTFont`
-directly. The service is PySide6-free so its composite-regeneration and rendering logic
-stays unit-testable with a lightweight path-like sink (see
-`thaipua.gui.glyph_pen.PathLike`).
-
-Live preview rebuilds the in-memory composite on every offset change (see
-`regenerate_composite`) — installs replace glyphs in place under stable prefixed names,
-so no eviction step is needed; slot locking (unrecognized foreign content) is
-reported via `InstallResult`. Nothing is written to disk until *Save Font*.
-"""
+"""Backend facade owning the live font generator; the sole bridge between GUI and `fontTools`."""
 
 from __future__ import annotations
 
@@ -51,12 +39,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True, frozen=True)
 class ComponentBox:
-    """Bounding box of a single composite component for the *Glyph Preview*.
-
-    The canvas draws one colored box per component so each part (consonant / below vowel
-    / above vowel / tone mark) is outlined independently. The `glyph_name` may differ
-    from the codepoint's cmap glyph under a substitution.
-    """
+    """Per-component outline box for preview overlays."""
 
     role: str
     glyph_name: str
@@ -65,12 +48,7 @@ class ComponentBox:
 
 @dataclass(slots=True)
 class GlyphRender:
-    """Metrics the preview canvas needs to lay out a single glyph.
-
-    `glyph_name` is `None` when the codepoint is unmapped (canvas draws nothing); `bbox`
-    is `None` when the glyph has no drawable contour; `component_boxes` is empty for
-    simple glyphs and unmapped codepoints.
-    """
+    """Metrics and metadata for drawing one glyph on the preview canvas."""
 
     codepoint: int
     glyph_name: str | None
@@ -85,12 +63,7 @@ class GlyphRender:
 
 
 class FontService:
-    """Backend glue: owns the live generator and the font's mutable state.
-
-    The service keeps the source path so it can also rebuild the generator (or persist
-    it) when settings change, and exposes the composer's placement-resolution surface
-    through GUI-friendly method names.
-    """
+    """Own the live generator and expose font operations to the GUI."""
 
     def __init__(self) -> None:
         """Initialize an empty service with no loaded font."""
@@ -137,20 +110,13 @@ class FontService:
         return self._pua_map_path
 
     def set_pua_map_path(self, path: str) -> None:
-        """Change the on-disk PUA map path consulted by `load`/`extend`/`save`."""
+        """Change the on-disk PUA map path consulted by `load_pua_map`/`ensure_pua_map`/`save_pua_map`."""
         self._pua_map_path = path
 
     def load_font(
         self, path: str | Path, settings: PlacementSettings | None = None, profiles_dir: str | Path | None = None
     ) -> None:
-        """Open the font at `path` for composite editing.
-
-        When `settings` is `None`, a profile is resolved via `resolve_settings_profile`
-        against `profiles_dir` (default `"profiles"`). A CFF source (.otf) is converted
-        to a TrueType working copy in memory (see
-        `thaipua.core.fonttools.cff_convert`), so installs behave identically for both
-        flavors and the Save-Font default becomes `<stem>_pua.ttf`.
-        """
+        """Open a font for editing, resolving its placement profile when settings are omitted."""
         src = Path(path)
         self._profiles_dir = str(profiles_dir) if profiles_dir is not None else DEFAULT_PROFILES_DIR
         if settings is None:
@@ -179,12 +145,10 @@ class FontService:
         return self._pua_map
 
     def ensure_pua_map(self) -> dict[str, str]:
-        """Load the Thai-to-PUA map from the stored path, returning it ready for use.
+        """Load the PUA map, allocating a full mapping only when the file is empty.
 
-        Allocates a full mapping only when the file is missing or empty (first-run
-        bootstrap). A pre-existing mapping is **never mutated on load** — it belongs to
-        the user: collisions surface as validator badges (`map_validation`) in the
-        mapping editor and as skipped installs at regeneration time.
+        Pre-existing mappings are returned untouched; collisions surface through
+        validation and skipped installs instead.
         """
         mapping = self.load_pua_map()
         if not mapping:
@@ -199,11 +163,7 @@ class FontService:
         save_pua_map(mapping, self._pua_map_path)
 
     def allocate_pua_map(self) -> dict[str, str]:
-        """Allocate PUA codepoints for every consonant/suffix combination.
-
-        Codepoints mapped in the live font's cmap are reserved, so allocations never
-        collide with the font. Returns the freshly reloaded map.
-        """
+        """Allocate a complete mapping, reserving codepoints already mapped in the live font."""
         from thaipua.core.pua_map import ensure_pua_map
 
         ensure_pua_map(
@@ -215,7 +175,7 @@ class FontService:
         return self.load_pua_map()
 
     def _occupied_pua_chars(self) -> set[str]:
-        """Return PUA characters mapped in the live font's cmap.
+        """Return PUA characters mapped in the live font's `cmap`.
 
         Returns an empty set when no font is loaded.
         """
@@ -224,11 +184,7 @@ class FontService:
         return {chr(cp) for cp in self._gen.font.getBestCmap() if PUA_RANGE_START <= cp <= PUA_RANGE_END}
 
     def pua_slot_context(self) -> PuaSlotContext | None:
-        """Snapshot the live font's cmap/glyf facts for PUA-map validation.
-
-        Returns `None` when no font is loaded; `validate_pua_map` then runs structural
-        checks only.
-        """
+        """Snapshot the font's slot facts for mapping validation, or `None` without a font."""
         if self._gen is None or self._gen.font is None:
             return None
         return slot_context_from_font(self._gen.font)
@@ -251,10 +207,9 @@ class FontService:
         return int(width)
 
     def render_glyph(self, codepoint: int, path: PathLike, spec: CompositeSpec | None = None) -> GlyphRender:
-        """Draw `codepoint`'s glyph into `path` and return its metrics.
+        """Draw a codepoint's installed glyph into `path` and return its metrics.
 
-        When `spec` is provided, per-component bounding boxes are populated on the
-        returned `GlyphRender`; `None` (a plain cmap codepoint) yields none.
+        When `spec` is provided, the result carries per-component bounding boxes.
         """
         if self._gen is None or self._gen.font is None:
             return GlyphRender(
@@ -302,14 +257,9 @@ class FontService:
         )
 
     def _component_boxes(self, glyph_name: str, spec: CompositeSpec | None) -> list[ComponentBox]:
-        """Compute each placed component's transformed bounding box.
+        """Compute per-component boxes for an installed composite, ordered consonant first.
 
-        Reads the top-level component list of the installed composite at `glyph_name`
-        and categorizes each entry by the composer's fixed add order — consonant first,
-        then below/above/tone marks in their spec slot order — so roles stay correct
-        even when a glyph substitution swapped in an alternate glyph name. `[]` is
-        returned for non-composite glyphs, glyphs absent from `glyf`, or fonts without
-        a `glyf` table (CFF/OTF outlines carry no component structure).
+        Returns an empty list for non-composite glyphs or fonts without `glyf`.
         """
         if spec is None or self._gen is None or self._gen.font is None:
             return []
@@ -364,12 +314,7 @@ class FontService:
     def _placed_component_boxes(
         self, placements: Sequence[ComponentPlacement], spec: CompositeSpec
     ) -> list[ComponentBox]:
-        """Compute each uninstalled placement's transformed bounding box and role.
-
-        Mirrors `_component_boxes` for the pure `compose_components` placements, so a
-        preview drawn without installing the composite still gets per-part boxes with
-        the composer's fixed add order (consonant first, then marks in spec slot order).
-        """
+        """Compute per-component boxes from placements without requiring installation."""
         if self._gen is None:
             return []
         roles = [SUB_CONSONANT]
@@ -397,13 +342,9 @@ class FontService:
     def render_composite_path(
         self, spec: CompositeSpec, settings: PlacementSettings, path: PathLike
     ) -> GlyphRender | None:
-        """Draw `spec` composed under `settings` into `path` without mutating the font.
+        """Preview a composed spec into `path` without modifying the font.
 
-        Non-mutating: placements come from the generator's read-only
-        `compose_components`, so the grid can preview live offsets/substitutions/snaps
-        for any codepoint — installed or not — with no slot-ownership checks and no
-        change to installed-composite state. Returns `None` when the consonant glyph is
-        missing from the font (nothing drawn).
+        Return `None` when the consonant glyph is missing from the font.
         """
         if self._gen is None or self._gen.font is None:
             return None
@@ -448,13 +389,7 @@ class FontService:
     def regenerate_composite(
         self, spec: CompositeSpec, settings: PlacementSettings, path: PathLike | None
     ) -> GlyphRender:
-        """Rebuild `spec` at its PUA codepoint under `settings` and optionally draw it.
-
-        Installs are replace-in-place (see `ThaiPuaFontGenerator.install_composite`), so
-        successive edits on the same codepoint always reflect the latest offsets — no
-        eviction step. Locked slots are skipped inside the composer; the render then
-        falls back to whatever glyph currently occupies the codepoint.
-        """
+        """Rebuild the composite at its PUA codepoint and render the current occupant."""
         if self._gen is None:
             raise RuntimeError("Cannot regenerate composites without a loaded font.")
         result = self._gen.install_composite(
@@ -471,11 +406,7 @@ class FontService:
         return self.render_glyph(spec.pua_code, path, spec=spec)
 
     def regenerate_all(self, settings: PlacementSettings, pua_map: dict[str, str]) -> list[InstallResult]:
-        """Rebuild every composite in `pua_map` under `settings`.
-
-        Returns one `InstallResult` per spec so callers can report skipped locked
-        slots instead of losing them in per-glyph logs.
-        """
+        """Rebuild every composite in the map, returning one result per spec."""
         if self._gen is None:
             raise RuntimeError("Cannot regenerate composites without a loaded font.")
         return [
@@ -491,13 +422,7 @@ class FontService:
         ]
 
     def save_font(self, output_path: str | Path | None, settings: PlacementSettings, pua_map: dict[str, str]) -> str:
-        """Rebuild all composites and write the resulting font to `output_path`.
-
-        After the font is written, `settings` are persisted to the stem-tier profile
-        (`<profiles_dir>/<stem>.json`) so edits survive a reload. `output_path=None`
-        falls back to the default `<stem>_pua.<ext>`; returns the path actually written
-        to.
-        """
+        """Rebuild all composites, write the font to `output_path`, and persist the settings profile."""
         if self._gen is None:
             raise RuntimeError("Cannot save: no font loaded.")
         target = str(output_path) if output_path is not None else self._output_path
@@ -514,12 +439,9 @@ class FontService:
         return target
 
     def _persist_profile(self, settings: PlacementSettings) -> Path | None:
-        """Persist `settings` to the stem-tier profile so edits survive a reload.
+        """Save `settings` to the stem-tier profile so edits survive a reload.
 
-        Writes to `<profiles_dir>/<stem>.json` (the highest-priority resolution tier),
-        creating or overwriting it; hand-authored family/`default.json` profiles are
-        left untouched. Returns the profile path, or `None` when no source font is
-        loaded (nothing to derive a stem from).
+        Family- and default-tier profiles are left untouched.
         """
         if self._src_path is None:
             return None
@@ -556,11 +478,7 @@ def _units_per_em(font: TTFont) -> int:
 
 
 def _font_metrics(font: TTFont, upem: int) -> tuple[int, int, int, int]:
-    """Return `(ascender, descender, cap_height, x_height)` smart-from-OS/2.
-
-    Falls back to typographic OS/2 fields, then `hhea`, then rational fractions of
-    `upem` so canvas guides still draw on older fonts.
-    """
+    """Collect canvas guide metrics, substituting rational defaults for missing fields."""
     os2 = font.get("OS/2")
     hhea = font.get("hhea")
     ascender = _coerce_int_field(os2, "sTypoAscender")
@@ -594,7 +512,7 @@ def _coerce_int_field(table: Any | None, attr: str) -> int:
 
 
 class _NullPath:
-    """No-op `PathLike` so `regenerate_composite` can run without rendering."""
+    """No-op path sink for regeneration without rendering."""
 
     def moveTo(self, x: float, y: float) -> None:
         return

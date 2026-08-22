@@ -1,14 +1,4 @@
-"""Modal PUA mapping editor: filterable table with live validation badges.
-
-`PuaMapTableModel` adapts the static Thai-to-PUA map to Qt Model/View — one row per
-Thai cluster, an editable PUA-codepoint cell that revalidates live against
-`core.fonttools.map_validation`, and severity-colored badges. `PuaMappingDialog`
-wraps the table with a text filter, an issues-only toggle, a summary line, and a
-jump-to-next-issue action; Apply returns the edited mapping to `MainWindow`, which is
-the sole mutator of `AppState`. The validator never mutates anything, so a partially
-invalid map can be saved deliberately — the badges are advisory, matching the
-static-map philosophy.
-"""
+"""Modal PUA mapping editor with a filterable table and live validation badges."""
 
 from __future__ import annotations
 
@@ -54,7 +44,7 @@ _WARNING_FOREGROUND = QColor(217, 154, 43)
 
 
 class _Column(IntEnum):
-    """Table columns; an enum so match-case arms compare values instead of capturing."""
+    """Table columns."""
 
     THAI = 0
     PUA = 1
@@ -76,7 +66,7 @@ _ROOT_INDEX = QModelIndex()
 
 @dataclass(slots=True)
 class _Row:
-    """One editable mapping entry and its original value for dirty tracking."""
+    """One editable mapping entry with its original value for dirty tracking."""
 
     thai_key: str
     original_char: str
@@ -98,7 +88,7 @@ class PuaMapTableModel(QAbstractTableModel):
     """Table model over the Thai-to-PUA map with per-row validation state."""
 
     issues_recomputed = Signal(int, int, int)
-    """Emitted after each full revalidation: `(errors, warnings, edited_rows)`."""
+    """Emitted after each revalidation: `(errors, warnings, edited_rows)`."""
 
     def __init__(self, mapping: dict[str, str], slot_ctx: PuaSlotContext | None, parent: QWidget | None = None) -> None:
         """Build the model from `mapping`, validating against `slot_ctx` when given."""
@@ -117,7 +107,7 @@ class PuaMapTableModel(QAbstractTableModel):
         return self._row_issues[row]
 
     def result_mapping(self) -> dict[str, str]:
-        """Return the current (possibly edited) Thai-key -> PUA-char mapping."""
+        """Return the current (possibly edited) Thai-key → PUA-char mapping."""
         return {row.thai_key: row.pua_char for row in self._rows}
 
     def next_issue_row(self, start_row: int) -> int | None:

@@ -6,12 +6,7 @@ from pathlib import Path
 
 
 def detect_text_encoding(file_path: str | Path) -> str:
-    """Detect a text file's encoding from its byte-order mark and content.
-
-    BOM-prefixed files resolve to the matching UTF codec. BOM-less files are utf-8
-    when their bytes are valid UTF-8, otherwise cp1252 — the legacy codepage many mod
-    text files are authored in.
-    """
+    """Detect a file's encoding from its BOM, falling back to UTF-8 validity, then cp1252."""
     raw = Path(file_path).read_bytes()
     if raw.startswith(b"\xff\xfe\x00\x00"):
         return "utf-32-le"

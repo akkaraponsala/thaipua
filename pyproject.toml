@@ -73,9 +73,6 @@ select = [
     "SIM",  # flake8-simplify
 ]
 
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
 [tool.ruff.lint.pep8-naming]
 extend-ignore-names = [
     "addComponent",

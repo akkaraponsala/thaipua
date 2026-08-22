@@ -1,8 +1,4 @@
-"""Top-level window wiring the three-column layout to `AppState`/`FontService`.
-
-`MainWindow` is the single mutator of `AppState`: every pane's signal lands here,
-mutates state, and re-renders whichever other pane cares.
-"""
+"""Main window coordinating panes, state mutations, and backend calls."""
 
 from __future__ import annotations
 
@@ -65,7 +61,7 @@ TEXT_FILTER = "Text / string-table files (*.txt *.strings *.dlstrings *.ilstring
 
 
 class MainWindow(QMainWindow):
-    """The main window: top toolbar, three-column splitter, status bar."""
+    """Main window: top toolbar, three-column splitter, and status bar."""
 
     def __init__(self) -> None:
         """Build the window with empty state; load the first Consonant page."""
@@ -191,31 +187,31 @@ class MainWindow(QMainWindow):
         """Pick text/string-table files and decode their PUA codepoints to Thai."""
         if not self._service.is_loaded:
             return
-        paths, _ = QFileDialog.getOpenFileNames(self, "Decode PUA -> Thai", "", TEXT_FILTER)
+        paths, _ = QFileDialog.getOpenFileNames(self, "Decode PUA → Thai", "", TEXT_FILTER)
         if not paths:
             return
         try:
             decode_files(self._service.pua_map_path, [Path(p) for p in paths])
         except (OSError, StringTableError) as exc:
             logger.exception("PUA decode failed")
-            QMessageBox.critical(self, "Decode PUA -> Thai", f"Decode failed:\n{exc}")
+            QMessageBox.critical(self, "Decode PUA → Thai", f"Decode failed:\n{exc}")
             return None
-        QMessageBox.information(self, "Decode PUA -> Thai", f"Decoded {len(paths)} file(s).")
+        QMessageBox.information(self, "Decode PUA → Thai", f"Decoded {len(paths)} file(s).")
 
     def _on_encode_thai(self) -> None:
         """Pick text/string-table files and encode their Thai text to PUA codepoints."""
         if not self._service.is_loaded:
             return
-        paths, _ = QFileDialog.getOpenFileNames(self, "Encode Thai -> PUA", "", TEXT_FILTER)
+        paths, _ = QFileDialog.getOpenFileNames(self, "Encode Thai → PUA", "", TEXT_FILTER)
         if not paths:
             return
         try:
             encode_files(self._service.pua_map_path, [Path(p) for p in paths])
         except (OSError, StringTableError) as exc:
             logger.exception("PUA encode failed")
-            QMessageBox.critical(self, "Encode Thai -> PUA", f"Encode failed:\n{exc}")
+            QMessageBox.critical(self, "Encode Thai → PUA", f"Encode failed:\n{exc}")
             return None
-        QMessageBox.information(self, "Encode Thai -> PUA", f"Encoded {len(paths)} file(s).")
+        QMessageBox.information(self, "Encode Thai → PUA", f"Encoded {len(paths)} file(s).")
 
     def _on_find_substitution(self) -> None:
         """Open the GSUB catalog dialog populated from the live font."""
@@ -225,14 +221,7 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _on_edit_mapping(self) -> None:
-        """Open the PUA mapping editor; Apply persists and refreshes dependent panes.
-
-        `MainWindow` stays the single `AppState` mutator: the dialog returns its edited
-        mapping, which replaces `state.pua_map` only on accept, is persisted through
-        `FontService.save_pua_map`, and triggers a grid/index rebuild. Structural
-        issues are advisory (badges in the editor); installs skip locked slots at
-        regeneration time regardless.
-        """
+        """Edit the PUA mapping, applying accepted results to state and disk."""
         if not self._service.is_loaded:
             return
         dialog = PuaMappingDialog(dict(self._state.pua_map), self._service.pua_slot_context(), self)
@@ -249,35 +238,17 @@ class MainWindow(QMainWindow):
         self._schedule_grid_refresh()
 
     def _on_settings(self) -> None:
-        """Open the preferences dialog with live Light/Dark/System theme switching.
-
-        The dialog applies each radio change immediately via `_on_theme_changed`
-        (stylesheet swap, persistence, and a pane/icon refresh).
-        """
+        """Open the preferences dialog with live theme switching."""
         SettingsDialog(self, current_mode=theme.current_theme_mode(), on_theme_changed=self._on_theme_changed).exec()
 
     def _on_theme_changed(self, mode: ThemeMode) -> None:
-        """Apply `mode` live, persist it, and re-theme the custom-painted surfaces.
-
-        qdarktheme's stylesheet re-skins every standard Qt widget across the app as soon
-        as `apply_theme` sets the merged stylesheet. The custom-painted surfaces — grid-
-        cell stylesheets, the glyph canvas, and the toolbar/pager icons — are not
-        reached by the global stylesheet, so they are refreshed explicitly by
-        `_refresh_theme_surfaces`.
-        """
+        """Apply and persist `mode`, then refresh custom-painted surfaces."""
         theme.apply_theme(mode=mode)
         theme.save_theme_mode(mode)
         self._refresh_theme_surfaces()
 
     def _refresh_theme_surfaces(self) -> None:
-        """Re-render every custom-painted surface for the newly-active palette.
-
-        Drops the cached icon engines and re-`setIcon`s the toolbar/pager buttons, re-
-        renders the grid cells (their per-cell stylesheets embed palette colors), and
-        repaints the glyph preview canvas. `paintEvent`/`_refresh_style` read
-        `theme.get_palette()` at draw time, so a fresh render picks up the switched
-        palette even though qdarktheme's global stylesheet cannot reach these widgets.
-        """
+        """Re-render custom-painted surfaces for the newly active palette."""
         icons.clear_cache()
         self._toolbar.refresh_icons()
         self._grid_pane.refresh_icons()
@@ -350,11 +321,7 @@ class MainWindow(QMainWindow):
         self._refresh_grid_pane()
 
     def _on_offset_changed(self, x: int, y: int) -> None:
-        """Live-commit an offset change for the active glyph under the radio role.
-
-        Mutates `state.settings` immediately and recomposes the preview, marking the
-        document dirty for save.
-        """
+        """Commit a live mark-offset edit and refresh the previews."""
         spec = self._active_spec()
         if spec is None or self._current_category is None:
             return None
@@ -364,12 +331,7 @@ class MainWindow(QMainWindow):
         self._schedule_grid_refresh()
 
     def _on_base_offset_changed(self, role: str, x: int, y: int) -> None:
-        """Live-commit a per-consonant base-offset delta and re-render the glyph.
-
-        Base Offsets lives in its own `base_offsets` tier, fully independent of per-
-        glyph Mark Offset (`mark_offsets`/`combo_offsets`). The active PUA spec (if any)
-        is recomposed so the preview reflects the new baseline.
-        """
+        """Commit a base-offset edit for `role` and refresh the previews."""
         cons_uni = self._state.active_consonant_uni
         if cons_uni is None:
             return
@@ -383,22 +345,9 @@ class MainWindow(QMainWindow):
         self._schedule_grid_refresh()
 
     def _on_glyph_substitution_changed(self, role: str, glyph_name: str) -> None:
-        """Live-commit a contextual glyph substitution and re-render the glyph.
+        """Commit a substitution override for the active role and context, then refresh the previews.
 
-        An empty `glyph_name` clears the matching rule (whose `conditions` equals the
-        active context's canonicalized mark-role set), leaving other rules for the same
-        codepoint untouched. Per-role dispatch: consonant uses `active_consonant_uni` as
-        both `codepoint` and `cons_uni`, with `present_roles` from the PUA spec (or
-        empty when only the consonant page is active); mark roles use the spec's mark
-        codepoint, `spec.cons_uni`, and the spec's present roles (requiring a selected
-        PUA glyph). `conditions` is canonicalized per codepoint category
-        (`context_canonicalizer`): a tone-mark codepoint merges the below-vowel family
-        with the tone-only family; an ascender-protruding consonant (e.g. ฬ) merges every
-        above-stack context (`above_vowel` and/or `tone_mark`, with or without a below
-        vowel) into one family — so a consonant substitution defined on an `above_vowel`
-        cluster also applies to its tone clusters. Every other consonant and vowel
-        codepoint uses the generic tone-within-vowel-family canonicalization, which
-        keeps a below-vowel rule from firing in no-below-vowel clusters.
+        An empty `glyph_name` clears the matching rule.
         """
         spec = self._active_spec()
         codepoint: int | None
@@ -436,12 +385,7 @@ class MainWindow(QMainWindow):
         self._schedule_grid_refresh()
 
     def _on_snap_changed(self, snap_name: str, enabled: bool, gap: int) -> None:
-        """Live-commit a per-consonant snap pair and re-render the glyph.
-
-        A disabled snap is cleared from the settings (the composer treats an absent snap
-        and an explicitly disabled snap identically); an enabled snap records its gap
-        and recomposes the active PUA spec (if any).
-        """
+        """Commit a snap toggle or gap change and refresh the previews."""
         cons_uni = self._state.active_consonant_uni
         if cons_uni is None:
             return
@@ -455,12 +399,7 @@ class MainWindow(QMainWindow):
         self._schedule_grid_refresh()
 
     def _on_category_changed(self, category: object) -> None:
-        """Reload X/Y inputs for the newly-selected radio category's role.
-
-        Reads via `current_mark_offset` so the sliders show only the per-glyph
-        `mark_offsets`/`combo_offsets` override — never the per-consonant Base Offset —
-        keeping Mark Offset and Base Offsets fully independent surfaces.
-        """
+        """Reload the X/Y inputs for the newly selected category's role."""
         spec = self._active_spec()
         if spec is None or not isinstance(category, MarkCategory):
             return None
@@ -471,7 +410,7 @@ class MainWindow(QMainWindow):
         self._controls_pane.set_enabled(spec_active, categories_for(spec))
 
     def _render_codepoint(self, codepoint: int) -> None:
-        """Render a base cmap codepoint (no offset edits) into the preview."""
+        """Render a base `cmap` codepoint (no offset edits) into the preview."""
         if not self._service.is_loaded:
             self._preview_pane.clear()
             self._preview_pane.set_metadata(codepoint, None)
@@ -482,11 +421,7 @@ class MainWindow(QMainWindow):
         self._preview_pane.set_render(render, path)
 
     def _render_pua_spec(self, spec: CompositeSpec, *, mark_dirty: bool = False) -> None:
-        """Regenerate `spec` under current settings and paint its preview.
-
-        `mark_dirty=True` flips `state.dirty` (slider drag); `False` for selection-only
-        re-renders.
-        """
+        """Regenerate `spec` under current settings and paint its preview."""
         if not self._service.is_loaded:
             self._preview_pane.clear()
             self._preview_pane.set_metadata(spec.pua_code, None)
@@ -501,13 +436,7 @@ class MainWindow(QMainWindow):
             self._refresh_footer()
 
     def _render_installed_spec(self, spec: CompositeSpec) -> None:
-        """Paint `spec`'s already-installed composite without rebuilding it.
-
-        A PUA glyph whose composite is already present in the live font — installed by
-        an earlier click or edit — is drawn directly. Eviction and recreation are only
-        needed when the settings changed, so a pure selection must not pay that cost on
-        every click.
-        """
+        """Paint an already-installed composite without rebuilding it."""
         if not self._service.is_loaded:
             self._preview_pane.clear()
             self._preview_pane.set_metadata(spec.pua_code, None)
@@ -525,7 +454,7 @@ class MainWindow(QMainWindow):
         return self._pua_index.get(pua_code)
 
     def _rebuild_pua_index(self) -> None:
-        """Rebuild the `pua_code -> CompositeSpec` index from `state.pua_map`."""
+        """Rebuild the `pua_code → CompositeSpec` index from `state.pua_map`."""
         index: dict[int, CompositeSpec] = {}
         for _cons_uni, specs in group_composites_by_consonant(self._state.pua_map).items():
             for spec in specs:
@@ -540,13 +469,7 @@ class MainWindow(QMainWindow):
             self._show_pua_page()
 
     def _schedule_grid_refresh(self) -> None:
-        """Debounce a left-pane re-render after a settings mutation.
-
-        The PUA grid is not live: its cell paths are recomputed once the settings have
-        settled, so fast slider drags only re-render the viewport (which rebuilds the
-        single active composite per tick) while the grid catches up 300 ms after the
-        last change.
-        """
+        """Queue a debounced grid refresh after a settings mutation."""
         self._grid_refresh_timer.start()
 
     def _show_consonants_page(self) -> None:
