@@ -34,8 +34,10 @@ icon = assets/images/logo.png
 [python]
 
 # python interpreter used to drive the build. empty lets `pyside6-deploy`
-# default to the interpreter running the tool (the project's venv).
-python_path = D:\ThaiPUA\venv\Scripts\python.exe
+# default to the interpreter running the tool, so both local builds
+# (`uv run ...`) and CI resolve the project's own venv without a hardcoded
+# machine-specific absolute path.
+python_path =
 
 # python packages to install for the build host. `pyside6-deploy` runs
 # nuitka to bundle pyside6; pin nuitka = =4.0 to match the spec the tool
@@ -89,6 +91,9 @@ mode = standalone
 # bundle folder `build/thaipua.dist/`.
 # `--output-folder-name = thaipua` fixes the `.dist/` folder name to `thaipua`
 # instead of nuitka's default `__main__` (derived from `__main__.py`), so it
-# matches the bundle `pyside6-deploy` looks for via `source_file.stem`.
-extra_args = --quiet --noinclude-qt-translations --include-data-dir=assets=assets --assume-yes-for-downloads --output-filename=ThaiPUA.exe --output-folder-name=thaipua --windows-console-mode=disable
+# matches the bundle `pysidedeploy` looks for via `source_file.stem`.
+# `--noinclude-dlls=Qt6Qml*.dll` drops the qml runtime that nuitka's dependency
+# scan pulls in transitively; the app is qtwidgets-only (verified by running
+# the bundle without this dll).
+extra_args = --quiet --noinclude-qt-translations --noinclude-dlls=Qt6Qml*.dll --include-data-dir=assets=assets --assume-yes-for-downloads --output-filename=ThaiPUA.exe --output-folder-name=thaipua --windows-console-mode=disable
 

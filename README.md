@@ -54,6 +54,6 @@ ThaiPUA is packaged as a standalone app with [`pyside6-deploy`](https://doc.qt.i
 uv run pyside6-deploy -c pysidedeploy.spec
 ```
 
-Run this from the repo root, since paths in the spec are resolved relative to it. Update `python_path` in the spec to `.venv/Scripts/python.exe` (Windows) or `.venv/bin/python` (macOS/Linux) if it doesn't match.
+Run this from the repo root, since paths in the spec are resolved relative to it. `python_path` in the spec stays empty so the tool uses the interpreter running it (the project venv via `uv run`).
 
-The output is a standalone bundle at `build/thaipua.dist/`, containing `ThaiPUA.exe` plus all Python, Qt, and asset dependencies — the whole folder is needed to run the app. The spec targets Windows by default; for macOS/Linux, adjust `python_path` and check the Qt plugin list.
+The output is a standalone bundle at `build/thaipua.dist/`, containing `ThaiPUA.exe` plus all Python, Qt, and asset dependencies — the whole folder is needed to run the app. The spec targets Windows by default; for macOS/Linux, check the Qt plugin list.

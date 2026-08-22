@@ -130,7 +130,7 @@ Don't commit these unless intentional. Tests isolate them via explicit `base_dir
 - **Grid vs. viewport refresh:** grid cells lag 300ms behind slider changes (debounce timer); the viewport rebuilds immediately. Don't rebuild the grid per tick.
 - **Pre-existing PUA maps are sacred:** loading never rewrites a user-edited `pua_mapping.json`; bad slots show up as validation issues and LOCKED-skip warnings at install time instead.
 - **Consonant protrusion:** only `ฬ` is `"ascender"` in `CONSONANT_PROTRUSION`; every other consonant (including down-protruding descenders `ญ ฐ ฎ ฏ`) falls back to generic tone-within-vowel-family context canonicalization. Don't add descender entries without understanding that logic.
-- **`pysidedeploy.spec`'s `python_path` is machine-specific** (currently a hardcoded absolute path): point it at `.venv/Scripts/python.exe` (Windows) or `.venv/bin/python` (macOS/Linux) before building, or Nuitka uses the wrong interpreter and the bundle fails. Run it from the repo root — spec paths resolve relative to cwd.
+- **`pysidedeploy.spec`'s `python_path` must stay empty** so `pyside6-deploy` uses the interpreter running the tool (the project venv via `uv run`, both local and CI); a hardcoded absolute path breaks other machines. Run it from the repo root — spec paths resolve relative to cwd.
 - Prefer `InstallResult.status` over log scraping when reacting to installs; every install outcome, including skips, has an explicit status.
 
 ## Commit & Pull Request Guidelines
