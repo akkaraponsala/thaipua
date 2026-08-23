@@ -142,7 +142,11 @@ class OccupancyDialog(QDialog):
         self._summary.setText(" · ".join(parts))
 
     def _build_row(self, row: OccupancyRow) -> QWidget:
-        """Assemble thumbnail, identity labels with a colored verdict, and action buttons."""
+        """Assemble thumbnail, identity labels with a colored verdict, and action buttons.
+
+        Override applies only to locked slots — foreign composites are replaced
+        on install anyway, so they offer relocation/remapping instead.
+        """
         host = QWidget(self._list_host)
         layout = QHBoxLayout(host)
         layout.setContentsMargins(8, 4, 8, 4)
@@ -160,14 +164,15 @@ class OccupancyDialog(QDialog):
             revoke_btn = QPushButton("Revoke", host)
             revoke_btn.clicked.connect(lambda _, cp=occ.codepoint: self.override_toggled.emit(cp, False))
             layout.addWidget(revoke_btn)
-        elif row.mapped:
+        elif row.mapped and occ.ownership is SlotOwnership.LOCKED:
             override_btn = QPushButton("Override", host)
             override_btn.clicked.connect(lambda _, cp=occ.codepoint: self.override_toggled.emit(cp, True))
             layout.addWidget(override_btn)
-            relocate_btn = QPushButton("Relocate", host)
-            relocate_btn.clicked.connect(lambda _, cp=occ.codepoint: self.relocate_requested.emit(cp))
-            layout.addWidget(relocate_btn)
         if row.mapped:
+            if not row.overridden:
+                relocate_btn = QPushButton("Relocate", host)
+                relocate_btn.clicked.connect(lambda _, cp=occ.codepoint: self.relocate_requested.emit(cp))
+                layout.addWidget(relocate_btn)
             remap_btn = QPushButton("Remap…", host)
             remap_btn.clicked.connect(lambda _, cp=occ.codepoint: self.remap_requested.emit(cp))
             layout.addWidget(remap_btn)

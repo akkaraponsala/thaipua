@@ -6,12 +6,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from conftest import FakeGlyf, make_glyf
 
+from thaipua.core.constants import PUA_RANGE_END
 from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
 from thaipua.core.fonttools.map_validation import IssueSeverity
 from thaipua.core.fonttools.specs import CompositeSpec
-from thaipua.core.layout import canonical_codepoint
+from thaipua.core.layout import (
+    canonical_codepoint,
+    canonical_tail_start,
+    max_base_codepoint,
+    save_layout_state,
+)
 from thaipua.gui.font_service import FontService
 
 
@@ -166,6 +173,39 @@ def test_set_base_codepoint_shifts_the_whole_layout(tmp_path: Path) -> None:
     assert service.layout_tail_start() == 0xE100 + 2016
 
 
+def test_set_base_codepoint_rejects_bases_outside_the_pua_range(tmp_path: Path) -> None:
+    service = FontService()
+    service.set_layout_path(str(tmp_path / "layout.json"))
+    service.set_pua_map_path(str(tmp_path / "pua.json"))
+    service.load_layout()
+
+    with pytest.raises(ValueError, match="outside the PUA range"):
+        service.set_base_codepoint(0x0040)
+    with pytest.raises(ValueError, match="outside the PUA range"):
+        service.set_base_codepoint(max_base_codepoint() + 1)
+
+    assert service.set_base_codepoint(max_base_codepoint()) == service.pua_map
+    assert canonical_tail_start(service.layout_base()) - 1 <= PUA_RANGE_END
+
+
+def test_state_version_bumps_on_layout_and_install_mutations(tmp_path: Path) -> None:
+    from conftest import FakeGlyf, FakeGlyph
+
+    cmap = {0xE000: "logo", 0x0E01: "ko_kai"}
+    glyf = FakeGlyf({"logo": FakeGlyph(composite=False), "ko_kai": FakeGlyph(composite=False)})
+    service = _service_with_font(cmap, glyf)
+    service.set_layout_path(str(tmp_path / "layout.json"))
+    service.set_pua_map_path(str(tmp_path / "pua.json"))
+
+    before = service.state_version
+    service.load_layout()
+    after_load = service.state_version
+    assert after_load > before
+
+    service.override_slot(0xE600)
+    assert service.state_version > after_load
+
+
 def test_override_clears_conflicts_and_relocate_key_moves_keys(tmp_path: Path) -> None:
     from conftest import FakeGlyf, FakeGlyph
 
@@ -194,3 +234,43 @@ def test_override_clears_conflicts_and_relocate_key_moves_keys(tmp_path: Path) -
     assert new_cp >= 0xE000 + 2016
     assert service.pua_map[other_key] == chr(new_cp)
     assert service.layout_conflicts() == []
+
+
+def test_bulk_override_and_relocate_each_persist_the_layout_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from conftest import FakeGlyf, FakeGlyph
+
+    conflict_cps = [0xE000, 0xE001, 0xE002]
+    cmap: dict[int, str] = {cp: f"logo{cp}" for cp in conflict_cps} | {0x0E01: "ko_kai"}
+    glyf = FakeGlyf(
+        {**{f"logo{cp}": FakeGlyph(composite=False) for cp in conflict_cps}, "ko_kai": FakeGlyph(composite=False)}
+    )
+    service = _service_with_font(cmap, glyf)
+    service.set_layout_path(str(tmp_path / "layout.json"))
+    service.set_pua_map_path(str(tmp_path / "pua.json"))
+    mapping = service.load_layout()
+    keys = sorted(
+        (key for key, char in mapping.items() if ord(char) in (0xE000, 0xE001)), key=lambda k: ord(mapping[k])
+    )
+
+    persist_calls = 0
+    real_save = save_layout_state
+
+    def counting_save(state: Any, path: Any) -> None:
+        nonlocal persist_calls
+        persist_calls += 1
+        real_save(state, path)
+
+    monkeypatch.setattr("thaipua.gui.font_service.save_layout_state", counting_save)
+
+    added = service.override_slots(conflict_cps)
+    assert added == 3
+    assert service.allowed_locked() == frozenset(conflict_cps)
+    assert persist_calls == 1
+
+    moved = service.relocate_keys(keys)
+    assert len(moved) == len(keys)
+    assert len(set(moved.values())) == len(keys)
+    assert all(codepoint >= 0xE000 + 2016 for codepoint in moved.values())
+    assert persist_calls == 2

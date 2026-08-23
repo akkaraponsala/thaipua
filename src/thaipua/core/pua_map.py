@@ -6,6 +6,8 @@ import json
 import logging
 from pathlib import Path
 
+from thaipua.core.constants import PUA_RANGE_END
+
 logger = logging.getLogger(__name__)
 
 THAI_CONSONANTS: str = "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"
@@ -63,8 +65,6 @@ THAI_SUFFIXES: list[str] = [
 
 def next_free_codepoint(start_pua: int, used_pua_chars: set[str]) -> int:
     """Return the lowest unused PUA codepoint at or above `start_pua`."""
-    from thaipua.core.constants import PUA_RANGE_END
-
     codepoint = start_pua
     while codepoint <= PUA_RANGE_END and chr(codepoint) in used_pua_chars:
         codepoint += 1

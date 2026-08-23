@@ -11,15 +11,12 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
 from thaipua.core.fonttools.occupancy import PuaOccupant
 from thaipua.core.fonttools.ownership import SlotOwnership
 from thaipua.core.pua_map import THAI_CONSONANTS, THAI_SUFFIXES
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +57,16 @@ def cluster_count() -> int:
 def canonical_tail_start(base: int) -> int:
     """Return the first codepoint after the canonical block — the relocation zone."""
     return base + cluster_count()
+
+
+def max_base_codepoint() -> int:
+    """Return the highest base that keeps the whole canonical block inside the PUA range."""
+    return PUA_RANGE_END - cluster_count() + 1
+
+
+def is_valid_base(base: int) -> bool:
+    """Return whether `base` starts a canonical block fully inside the PUA range."""
+    return PUA_RANGE_START <= base <= max_base_codepoint()
 
 
 def canonical_layout(base: int) -> dict[str, str]:
@@ -156,6 +163,9 @@ def load_layout_state(path: str | Path) -> LayoutState | None:
         logger.warning("Layout file has an unexpected shape; ignoring: %s", path)
         return None
     base = _parse_hex(payload.get("base"), DEFAULT_BASE_CODEPOINT)
+    if not is_valid_base(base):
+        logger.warning("Layout base U+%04X is outside the PUA range; using the default", base)
+        base = DEFAULT_BASE_CODEPOINT
     raw_relocations = payload.get("relocations")
     relocations = {str(k): v for k, v in raw_relocations.items()} if isinstance(raw_relocations, dict) else {}
     overrides = _parse_overrides(payload.get("overrides"))

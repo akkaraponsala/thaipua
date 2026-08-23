@@ -25,6 +25,7 @@ from thaipua.core.fonttools.map_validation import IssueSeverity, PuaMapIssue
 from thaipua.core.fonttools.ownership import SlotOwnership
 from thaipua.core.fonttools.settings import SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL, SUB_CONSONANT, SUB_TONE_MARK
 from thaipua.core.fonttools.specs import CompositeSpec
+from thaipua.core.layout import LayoutConflict
 from thaipua.core.string_table import StringTableError
 from thaipua.gui import icons, theme
 from thaipua.gui.font_service import FontService
@@ -95,6 +96,8 @@ class MainWindow(QMainWindow):
         self._settings_generation = 0
         self._installed_generations: dict[int, int] = {}
         self._occupancy_dialog: OccupancyDialog | None = None
+        self._conflicts_cache: tuple[int, list[LayoutConflict]] | None = None
+        self._last_occupancy_notice: str | None = None
         self._grid_refresh_timer = QTimer(self)
         self._grid_refresh_timer.setSingleShot(True)
         self._grid_refresh_timer.setInterval(300)
@@ -337,26 +340,38 @@ class MainWindow(QMainWindow):
         if self._occupancy_dialog is not None:
             self._occupancy_dialog.refresh(self._build_occupancy_rows())
 
+    def _current_conflicts(self) -> list[LayoutConflict]:
+        """Return layout-vs-font conflicts, rescanning only after a service mutation."""
+        version = self._service.state_version
+        if self._conflicts_cache is None or self._conflicts_cache[0] != version:
+            self._conflicts_cache = (version, self._service.layout_conflicts())
+        return self._conflicts_cache[1]
+
     def _update_occupancy_notice(self) -> None:
         """Summarize unresolved layout-vs-font conflicts into the footer notice.
 
         Foreign glyphs on unmapped slots ride along harmlessly; only mapped slots
-        still sitting on foreign content raise the ⚠ segment.
+        still sitting on foreign content raise the ⚠ segment. The warning logs
+        once per change of the conflict set, not on every footer refresh.
         """
-        conflicts = self._service.layout_conflicts()
+        conflicts = self._current_conflicts()
         if not conflicts:
+            if self._last_occupancy_notice is not None:
+                logger.info("All mapped slots are conflict-free")
+            self._last_occupancy_notice = None
             self._status_bar.set_notice(None)
             return
-        logger.warning(
-            "%d mapped slot(s) still hold foreign content: %s",
-            len(conflicts),
-            "; ".join(
-                f"U+{c.codepoint:04X}={c.occupant.glyph_name} ({c.occupant.detail})" for c in conflicts[:10]
-            ),
-        )
         runs = _compress_runs(sorted(c.codepoint for c in conflicts))
         label = ", ".join(f"U+{start:04X}-U+{end:04X}" if end > start else f"U+{start:04X}" for start, end in runs)
-        self._status_bar.set_notice(f"{len(conflicts)} mapped slot(s) conflict: {label}")
+        notice = f"{len(conflicts)} mapped slot(s) conflict: {label}"
+        if notice != self._last_occupancy_notice:
+            logger.warning(
+                "%d mapped slot(s) still hold foreign content: %s",
+                len(conflicts),
+                "; ".join(f"U+{c.codepoint:04X}={c.occupant.glyph_name} ({c.occupant.detail})" for c in conflicts[:10]),
+            )
+            self._last_occupancy_notice = notice
+        self._status_bar.set_notice(notice)
 
     def _key_for_codepoint(self, codepoint: int) -> str | None:
         """Return the Thai key currently mapped onto `codepoint`, or `None`."""
@@ -387,7 +402,7 @@ class MainWindow(QMainWindow):
         self._refresh_after_resolutions(layout_changed=True)
 
     def _on_bulk_override(self) -> None:
-        """Approve overrides for every mapped slot still holding foreign content."""
+        """Approve overrides for every mapped locked slot still holding foreign content."""
         allowed = self._service.allowed_locked()
         mapped_codes = {ord(char) for char in self._state.pua_map.values() if len(char) == 1}
         targets = [
@@ -395,26 +410,20 @@ class MainWindow(QMainWindow):
             for o in self._service.pua_occupants()
             if o.codepoint in mapped_codes and o.ownership is SlotOwnership.LOCKED and o.codepoint not in allowed
         ]
-        if not targets:
+        if not targets or not self._service.override_slots(targets):
             return
-        for codepoint in targets:
-            self._service.override_slot(codepoint)
-        logger.info("Bulk-overrode %d locked slot(s)", len(targets))
         self._refresh_after_resolutions(layout_changed=False)
 
     def _on_bulk_relocate(self) -> None:
         """Relocate every Thai key whose slot still conflicts with the font."""
-        keys = [c.thai_key for c in self._service.layout_conflicts()]
-        if not keys:
+        keys = [c.thai_key for c in self._current_conflicts()]
+        if not keys or not self._service.relocate_keys(keys):
             return
-        for thai_key in keys:
-            self._service.relocate_key(thai_key)
-        logger.info("Bulk-relocated %d key(s)", len(keys))
         self._refresh_after_resolutions(layout_changed=True)
 
     def _on_bulk_remap(self) -> None:
         """Open the mapping editor pre-filtered to every slot still conflicting."""
-        conflicts = self._service.layout_conflicts()
+        conflicts = self._current_conflicts()
         if self._occupancy_dialog is not None:
             self._occupancy_dialog.reject()
         self._open_mapping_dialog(initial_query=" ".join(f"{c.codepoint:04X}" for c in conflicts) or None)

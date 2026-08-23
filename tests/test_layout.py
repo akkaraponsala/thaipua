@@ -18,8 +18,10 @@ from thaipua.core.layout import (
     effective_layout,
     find_conflicts,
     find_relocation_target,
+    is_valid_base,
     key_at_ordinal,
     load_layout_state,
+    max_base_codepoint,
     save_layout_state,
 )
 from thaipua.core.pua_map import THAI_CONSONANTS, THAI_SUFFIXES
@@ -109,3 +111,20 @@ def test_load_layout_state_defaults(tmp_path: Path) -> None:
     path = tmp_path / "broken.json"
     path.write_text("{not json", encoding="utf-8")
     assert load_layout_state(path) is None
+
+
+def test_is_valid_base_bounds_the_canonical_block_inside_pua() -> None:
+    assert is_valid_base(PUA_RANGE_START)
+    assert is_valid_base(max_base_codepoint())
+    assert canonical_tail_start(max_base_codepoint()) - 1 <= PUA_RANGE_END
+    assert not is_valid_base(max_base_codepoint() + 1)
+    assert not is_valid_base(PUA_RANGE_START - 1)
+    assert not is_valid_base(0)
+
+
+def test_load_layout_state_falls_back_when_base_outside_pua(tmp_path: Path) -> None:
+    path = tmp_path / "layout.json"
+    path.write_text('{"version": 1, "base": "0040", "relocations": {}, "overrides": []}', encoding="utf-8")
+    loaded = load_layout_state(path)
+    assert loaded is not None
+    assert loaded.base == DEFAULT_BASE_CODEPOINT

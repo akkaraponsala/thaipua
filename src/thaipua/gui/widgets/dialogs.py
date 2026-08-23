@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from thaipua.core.fonttools.alternates import GlyphSubstitution
+from thaipua.core.layout import canonical_tail_start, is_valid_base
 from thaipua.gui import theme
 from thaipua.gui.theme import ThemeMode
 
@@ -134,20 +135,24 @@ class SettingsDialog(QDialog):
         apply_btn.clicked.connect(self._apply_base)
         row.addWidget(apply_btn)
         hint = f"Relocation zone starts at U+{tail_start:04X}" if tail_start is not None else ""
-        hint_label = QLabel(hint, holder)
-        hint_label.setStyleSheet("color: #80868B; font-size: 8pt;")
-        row.addWidget(hint_label)
+        self._hint_label = QLabel(hint, holder)
+        self._hint_label.setStyleSheet("color: #80868B; font-size: 8pt;")
+        row.addWidget(self._hint_label)
         row.addStretch(1)
         return holder
 
     def _apply_base(self) -> None:
-        """Forward the parsed hex base to the callback; ignore malformed input."""
+        """Forward the parsed hex base to the callback; flag values outside the PUA range."""
+        self._base_input.setStyleSheet("")
         text = self._base_input.text().strip()
         try:
             base = int(text, 16)
         except ValueError:
+            base = -1
+        if not is_valid_base(base):
             self._base_input.setStyleSheet("border: 1px solid #BE3C3C;")
             return
+        self._hint_label.setText(f"Relocation zone starts at U+{canonical_tail_start(base):04X}")
         if self._on_base_changed is not None:
             self._on_base_changed(base)
 
