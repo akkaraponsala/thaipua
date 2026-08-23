@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
 
 from thaipua.core.constants import DEFAULT_PROFILES_DIR
 from thaipua.core.file_codec import decode_files, encode_files
+from thaipua.core.fonttools.map_validation import IssueSeverity, PuaMapIssue
+from thaipua.core.fonttools.ownership import SlotOwnership
 from thaipua.core.fonttools.settings import SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL, SUB_CONSONANT, SUB_TONE_MARK
 from thaipua.core.fonttools.specs import CompositeSpec
 from thaipua.core.string_table import StringTableError
@@ -46,6 +48,7 @@ from thaipua.gui.theme import ThemeMode
 from thaipua.gui.widgets.controls_pane import ControlsPane
 from thaipua.gui.widgets.dialogs import FindSubstitutionDialog, SettingsDialog
 from thaipua.gui.widgets.glyph_grid_pane import CellVisual, GlyphGridPane
+from thaipua.gui.widgets.occupancy_dialog import OccupancyDialog, OccupancyRow
 from thaipua.gui.widgets.preview_pane import GlyphPreviewPane
 from thaipua.gui.widgets.pua_mapping_dialog import PuaMappingDialog
 from thaipua.gui.widgets.status_footer import StatusBar
@@ -58,6 +61,22 @@ logger = logging.getLogger(__name__)
 
 FONT_FILTER = "Font files (*.ttf *.otf);;All files (*.*)"
 TEXT_FILTER = "Text / string-table files (*.txt *.strings *.dlstrings *.ilstrings);;All files (*.*)"
+_SAVE_BLOCK_PREVIEW_LIMIT = 8
+"""Maximum mapping issues listed in the save-blocked dialog before an ellipsis line."""
+
+
+def _compress_runs(codepoints: list[int]) -> list[tuple[int, int]]:
+    """Collapse sorted codepoints into inclusive (start, end) ranges for compact display."""
+    if not codepoints:
+        return []
+    runs: list[tuple[int, int]] = [(codepoints[0], codepoints[0])]
+    for codepoint in codepoints[1:]:
+        start, end = runs[-1]
+        if codepoint == end + 1:
+            runs[-1] = (start, codepoint)
+        else:
+            runs.append((codepoint, codepoint))
+    return runs
 
 
 class MainWindow(QMainWindow):
@@ -75,6 +94,7 @@ class MainWindow(QMainWindow):
         self._sub_catalog: dict[str, list[GlyphSubstitution]] = {}
         self._settings_generation = 0
         self._installed_generations: dict[int, int] = {}
+        self._occupancy_dialog: OccupancyDialog | None = None
         self._grid_refresh_timer = QTimer(self)
         self._grid_refresh_timer.setSingleShot(True)
         self._grid_refresh_timer.setInterval(300)
@@ -118,6 +138,7 @@ class MainWindow(QMainWindow):
         toolbar.encode_thai_requested.connect(self._on_encode_thai)
         toolbar.find_substitution_requested.connect(self._on_find_substitution)
         toolbar.edit_mapping_requested.connect(self._on_edit_mapping)
+        toolbar.pua_slots_requested.connect(self._on_pua_slots)
         toolbar.settings_requested.connect(self._on_settings)
         grid = self._grid_pane
         grid.consonant_clicked.connect(self._on_consonant_clicked)
@@ -144,7 +165,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Open Font", f"Could not open font:\n{exc}")
             return
         self._state.font_path = path
-        self._state.pua_map = self._service.ensure_pua_map()
+        self._state.pua_map = self._service.load_layout()
         self._sub_catalog = self._service.find_substitutions()
         self._rebuild_pua_index()
         self._settings_generation = 0
@@ -168,6 +189,14 @@ class MainWindow(QMainWindow):
 
     def _on_save_font(self) -> None:
         """Pick a destination and write the rebuilt font through `FontService`."""
+        errors = [
+            issue
+            for issue in self._service.validation_issues(self._state.pua_map)
+            if issue.severity is IssueSeverity.ERROR
+        ]
+        if errors:
+            self._report_mapping_errors(errors)
+            return
         default = self._service.output_path or "thaipua.ttf"
         path, _ = QFileDialog.getSaveFileName(self, "Save Font", default, FONT_FILTER)
         if not path:
@@ -182,6 +211,19 @@ class MainWindow(QMainWindow):
         self._state.dirty = False
         self._refresh_footer()
         QMessageBox.information(self, "Save Font", f"Saved:\n{path}")
+
+    def _report_mapping_errors(self, errors: list[PuaMapIssue]) -> None:
+        """Show the mapping errors that blocked the save, previewing at most `_SAVE_BLOCK_PREVIEW_LIMIT`."""
+        lines = [f"{issue.thai_key}: {issue.message}" for issue in errors[:_SAVE_BLOCK_PREVIEW_LIMIT]]
+        hidden = len(errors) - len(lines)
+        if hidden > 0:
+            lines.append(f"… and {hidden} more")
+        QMessageBox.critical(
+            self,
+            "Save Font",
+            f"Save blocked: {len(errors)} PUA mapping error(s). "
+            "Fix them in PUA Mapping, or review occupied slots under PUA Slots & Overrides.\n\n" + "\n".join(lines),
+        )
 
     def _on_decode_pua(self) -> None:
         """Pick text/string-table files and decode their PUA codepoints to Thai."""
@@ -220,26 +262,181 @@ class MainWindow(QMainWindow):
         dialog = FindSubstitutionDialog(self._service.find_substitutions(), self)
         dialog.exec()
 
-    def _on_edit_mapping(self) -> None:
+    def _on_edit_mapping(self, initial_query: str | None = None) -> None:
         """Edit the PUA mapping, applying accepted results to state and disk."""
         if not self._service.is_loaded:
             return
-        dialog = PuaMappingDialog(dict(self._state.pua_map), self._service.pua_slot_context(), self)
+        self._open_mapping_dialog(initial_query)
+
+    def _open_mapping_dialog(self, initial_query: str | None = None) -> None:
+        """Run the mapping editor, optionally pre-filtered; persist an accepted result."""
+        dialog = PuaMappingDialog(
+            dict(self._state.pua_map),
+            self._service.pua_slot_context(),
+            self,
+            allowed_locked=self._service.allowed_locked(),
+            initial_query=initial_query,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         new_map = dialog.result_mapping()
         if new_map == self._state.pua_map:
             return
-        self._state.pua_map = new_map
-        self._service.save_pua_map(new_map)
+        self._state.pua_map = self._service.apply_manual_edits(new_map)
+        self._rebuild_pua_index()
+        self._state.dirty = True
+        self._refresh_footer()
+        self._schedule_grid_refresh()
+
+    def _on_pua_slots(self) -> None:
+        """Open the foreign-slot report; its actions route through `FontService` mutations."""
+        if not self._service.is_loaded:
+            return
+        self._occupancy_dialog = OccupancyDialog(self._build_occupancy_rows(), self)
+        self._occupancy_dialog.override_toggled.connect(self._on_override_toggled)
+        self._occupancy_dialog.relocate_requested.connect(self._on_relocate_requested)
+        self._occupancy_dialog.remap_requested.connect(self._on_remap_requested)
+        self._occupancy_dialog.bulk_override_requested.connect(self._on_bulk_override)
+        self._occupancy_dialog.bulk_relocate_requested.connect(self._on_bulk_relocate)
+        self._occupancy_dialog.bulk_remap_requested.connect(self._on_bulk_remap)
+        self._occupancy_dialog.exec()
+        self._occupancy_dialog = None
+
+    def _build_occupancy_rows(self) -> list[OccupancyRow]:
+        """Snapshot foreign slots with thumbnails and mapping context for the report."""
+        rows = []
+        mapped_codes = {ord(char) for char in self._state.pua_map.values()}
+        allowed = self._service.allowed_locked()
+        for occupant in self._service.pua_occupants():
+            if occupant.ownership is SlotOwnership.OWNED:
+                continue
+            path = QPainterPath()
+            self._service.render_glyph(occupant.codepoint, path)
+            rows.append(
+                OccupancyRow(
+                    occupant=occupant,
+                    path=None if path.isEmpty() else path,
+                    mapped=occupant.codepoint in mapped_codes,
+                    overridden=occupant.codepoint in allowed,
+                )
+            )
+        return rows
+
+    def _on_override_toggled(self, codepoint: int, approve: bool) -> None:
+        """Persist an override decision and refresh every surface that reflects it."""
+        if approve:
+            self._service.override_slot(codepoint)
+        else:
+            self._service.clear_override(codepoint)
+        logger.info("User %s the override for U+%04X", "approved" if approve else "revoked", codepoint)
+        self._refresh_after_resolutions(layout_changed=False)
+
+    def _on_remap_requested(self, codepoint: int) -> None:
+        """Open the mapping editor pre-filtered to the key occupying `codepoint`."""
+        self._open_mapping_dialog(initial_query=f"{codepoint:04X}")
+        if self._occupancy_dialog is not None:
+            self._occupancy_dialog.refresh(self._build_occupancy_rows())
+
+    def _update_occupancy_notice(self) -> None:
+        """Summarize unresolved layout-vs-font conflicts into the footer notice.
+
+        Foreign glyphs on unmapped slots ride along harmlessly; only mapped slots
+        still sitting on foreign content raise the ⚠ segment.
+        """
+        conflicts = self._service.layout_conflicts()
+        if not conflicts:
+            self._status_bar.set_notice(None)
+            return
+        logger.warning(
+            "%d mapped slot(s) still hold foreign content: %s",
+            len(conflicts),
+            "; ".join(
+                f"U+{c.codepoint:04X}={c.occupant.glyph_name} ({c.occupant.detail})" for c in conflicts[:10]
+            ),
+        )
+        runs = _compress_runs(sorted(c.codepoint for c in conflicts))
+        label = ", ".join(f"U+{start:04X}-U+{end:04X}" if end > start else f"U+{start:04X}" for start, end in runs)
+        self._status_bar.set_notice(f"{len(conflicts)} mapped slot(s) conflict: {label}")
+
+    def _key_for_codepoint(self, codepoint: int) -> str | None:
+        """Return the Thai key currently mapped onto `codepoint`, or `None`."""
+        for thai_key, pua_char in self._state.pua_map.items():
+            if len(pua_char) == 1 and ord(pua_char) == codepoint:
+                return thai_key
+        return None
+
+    def _refresh_after_resolutions(self, *, layout_changed: bool) -> None:
+        """Propagate override/relocate resolutions into state and every dependent view."""
+        if layout_changed:
+            self._state.pua_map = self._service.pua_map
+            self._rebuild_pua_index()
+        self._state.dirty = True
+        self._refresh_footer()
+        self._schedule_grid_refresh()
+        if self._occupancy_dialog is not None:
+            self._occupancy_dialog.refresh(self._build_occupancy_rows())
+
+    def _on_relocate_requested(self, codepoint: int) -> None:
+        """Move the key mapped onto `codepoint` into the tail zone and refresh."""
+        thai_key = self._key_for_codepoint(codepoint)
+        if thai_key is None:
+            logger.warning("Cannot relocate U+%04X: no mapped key", codepoint)
+            return
+        if self._service.relocate_key(thai_key) is None:
+            return
+        self._refresh_after_resolutions(layout_changed=True)
+
+    def _on_bulk_override(self) -> None:
+        """Approve overrides for every mapped slot still holding foreign content."""
+        allowed = self._service.allowed_locked()
+        mapped_codes = {ord(char) for char in self._state.pua_map.values() if len(char) == 1}
+        targets = [
+            o.codepoint
+            for o in self._service.pua_occupants()
+            if o.codepoint in mapped_codes and o.ownership is SlotOwnership.LOCKED and o.codepoint not in allowed
+        ]
+        if not targets:
+            return
+        for codepoint in targets:
+            self._service.override_slot(codepoint)
+        logger.info("Bulk-overrode %d locked slot(s)", len(targets))
+        self._refresh_after_resolutions(layout_changed=False)
+
+    def _on_bulk_relocate(self) -> None:
+        """Relocate every Thai key whose slot still conflicts with the font."""
+        keys = [c.thai_key for c in self._service.layout_conflicts()]
+        if not keys:
+            return
+        for thai_key in keys:
+            self._service.relocate_key(thai_key)
+        logger.info("Bulk-relocated %d key(s)", len(keys))
+        self._refresh_after_resolutions(layout_changed=True)
+
+    def _on_bulk_remap(self) -> None:
+        """Open the mapping editor pre-filtered to every slot still conflicting."""
+        conflicts = self._service.layout_conflicts()
+        if self._occupancy_dialog is not None:
+            self._occupancy_dialog.reject()
+        self._open_mapping_dialog(initial_query=" ".join(f"{c.codepoint:04X}" for c in conflicts) or None)
+
+    def _on_base_changed(self, base: int) -> None:
+        """Rebase the canonical layout, refresh every view, then surface any new conflicts."""
+        self._state.pua_map = self._service.set_base_codepoint(base)
         self._rebuild_pua_index()
         self._state.dirty = True
         self._refresh_footer()
         self._schedule_grid_refresh()
 
     def _on_settings(self) -> None:
-        """Open the preferences dialog with live theme switching."""
-        SettingsDialog(self, current_mode=theme.current_theme_mode(), on_theme_changed=self._on_theme_changed).exec()
+        """Open the preferences dialog with live theme and layout-base switching."""
+        SettingsDialog(
+            self,
+            current_mode=theme.current_theme_mode(),
+            on_theme_changed=self._on_theme_changed,
+            base_codepoint=self._service.layout_base(),
+            base_tail_start=self._service.layout_tail_start(),
+            on_base_changed=self._on_base_changed,
+        ).exec()
 
     def _on_theme_changed(self, mode: ThemeMode) -> None:
         """Apply and persist `mode`, then refresh custom-painted surfaces."""
@@ -535,8 +732,10 @@ class MainWindow(QMainWindow):
             self._grid_pane.set_selected(self._state.active_pua_code)
 
     def _refresh_footer(self) -> None:
+        """Re-render the footer: font name, dirty marker, and occupancy notice."""
         self._status_bar.set_font(self._state.font_path)
         self._status_bar.set_dirty(self._state.dirty)
+        self._update_occupancy_notice()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Prompt to save unsaved edits before closing; allow cancel via the prompt."""

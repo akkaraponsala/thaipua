@@ -9,9 +9,9 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 THAI_CONSONANTS: set[int] = {ord(c) for c in "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"}
-BELOW_VOWELS: set[int] = {3640, 3641}
-ABOVE_VOWELS: set[int] = {3633, 3636, 3661, 3637, 3638, 3655, 3639}
-TONE_MARKS: set[int] = {3658, 3660, 3656, 3659, 3657}
+BELOW_VOWELS: set[int] = {0x0E38, 0x0E39}
+ABOVE_VOWELS: set[int] = {0x0E31, 0x0E34, 0x0E35, 0x0E36, 0x0E37, 0x0E47, 0x0E4D}
+TONE_MARKS: set[int] = {0x0E48, 0x0E49, 0x0E4A, 0x0E4B, 0x0E4C}
 
 # Protrusion direction scoping consonant self-substitutions; only ascender
 # consonants (e.g. ฬ) are listed — all others fall back to the generic context

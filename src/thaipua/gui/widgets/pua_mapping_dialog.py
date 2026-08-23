@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
 from thaipua.core.fonttools.map_validation import (
     IssueSeverity,
     PuaMapIssue,
@@ -36,6 +37,7 @@ from thaipua.core.fonttools.map_validation import (
     validate_pua_map,
 )
 from thaipua.core.fonttools.specs import decompose_thai_cluster
+from thaipua.core.pua_map import next_free_codepoint
 
 _ERROR_BACKGROUND = QColor(190, 60, 60, 46)
 _WARNING_BACKGROUND = QColor(216, 160, 40, 40)
@@ -90,11 +92,19 @@ class PuaMapTableModel(QAbstractTableModel):
     issues_recomputed = Signal(int, int, int)
     """Emitted after each revalidation: `(errors, warnings, edited_rows)`."""
 
-    def __init__(self, mapping: dict[str, str], slot_ctx: PuaSlotContext | None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        mapping: dict[str, str],
+        slot_ctx: PuaSlotContext | None,
+        parent: QWidget | None = None,
+        *,
+        allowed_locked: frozenset[int] | None = None,
+    ) -> None:
         """Build the model from `mapping`, validating against `slot_ctx` when given."""
         super().__init__(parent)
         self._rows = [_Row(thai_key, pua_char, pua_char) for thai_key, pua_char in mapping.items()]
         self._slot_ctx = slot_ctx
+        self._allowed_locked = allowed_locked if allowed_locked is not None else frozenset()
         self._row_issues: list[tuple[PuaMapIssue, ...]] = [()] * len(self._rows)
         self._revalidate()
 
@@ -105,6 +115,19 @@ class PuaMapTableModel(QAbstractTableModel):
     def row_issues(self, row: int) -> tuple[PuaMapIssue, ...]:
         """Return the merged issues of `row`; empty means clean."""
         return self._row_issues[row]
+
+    def issue_totals(self) -> tuple[int, int, int]:
+        """Return `(error_rows, warning_rows, edited_rows)` from the latest revalidation."""
+        errors = warnings = 0
+        for entries in self._row_issues:
+            if not entries:
+                continue
+            if any(entry.severity is IssueSeverity.ERROR for entry in entries):
+                errors += 1
+            else:
+                warnings += 1
+        edited = sum(1 for row in self._rows if row.pua_char != row.original_char)
+        return (errors, warnings, edited)
 
     def result_mapping(self) -> dict[str, str]:
         """Return the current (possibly edited) Thai-key → PUA-char mapping."""
@@ -123,24 +146,14 @@ class PuaMapTableModel(QAbstractTableModel):
         """Re-run the validator over the whole map and refresh issue state."""
         mapping = {row.thai_key: row.pua_char for row in self._rows}
         grouped: dict[str, list[PuaMapIssue]] = {}
-        for issue in validate_pua_map(mapping, self._slot_ctx):
+        for issue in validate_pua_map(mapping, self._slot_ctx, allowed_locked=self._allowed_locked):
             grouped.setdefault(issue.thai_key, []).append(issue)
-        self._row_issues = []
-        errors = warnings = 0
-        for row in self._rows:
-            entries = tuple(grouped.get(row.thai_key, ()))
-            self._row_issues.append(entries)
-            has_error = any(entry.severity is IssueSeverity.ERROR for entry in entries)
-            if has_error:
-                errors += 1
-            elif entries:
-                warnings += 1
-        edited = sum(1 for row in self._rows if row.pua_char != row.original_char)
+        self._row_issues = [tuple(grouped.get(row.thai_key, ())) for row in self._rows]
         if self._rows:
             top_left = self.index(0, 0)
             bottom_right = self.index(len(self._rows) - 1, _COLUMN_COUNT - 1)
             self.dataChanged.emit(top_left, bottom_right)
-        self.issues_recomputed.emit(errors, warnings, edited)
+        self.issues_recomputed.emit(*self.issue_totals())
 
     def rowCount(self, parent: QModelIndex | QPersistentModelIndex = _ROOT_INDEX) -> int:
         """Return the row count (flat table — `parent` is always invalid here)."""
@@ -218,17 +231,17 @@ class PuaMapTableModel(QAbstractTableModel):
 
 
 class PuaMapFilterProxy(QSortFilterProxyModel):
-    """Text/issues-only filter over `PuaMapTableModel` rows."""
+    """Any-of-terms / issues-only filter over `PuaMapTableModel` rows."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Build an empty filter accepting every row until configured."""
         super().__init__(parent)
-        self._query = ""
+        self._terms: list[str] = []
         self._issues_only = False
 
     def set_query(self, query: str) -> None:
-        """Filter rows whose Thai key or PUA hex contains `query` (case-insensitive)."""
-        self._query = query.strip().lower()
+        """Keep rows whose Thai key or PUA hex contains any space-separated term."""
+        self._terms = [term.lower() for term in query.split()]
         self.invalidateFilter()
 
     def set_issues_only(self, issues_only: bool) -> None:
@@ -237,18 +250,17 @@ class PuaMapFilterProxy(QSortFilterProxyModel):
         self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex | QPersistentModelIndex) -> bool:
-        """Keep rows matching both the text query and the issues-only toggle."""
+        """Keep rows matching at least one query term and the issues-only toggle."""
         model = self.sourceModel()
         if not isinstance(model, PuaMapTableModel):
             return True
         row = model.row_at(source_row)
         if self._issues_only and not model.row_issues(source_row):
             return False
-        if self._query and self._query not in row.thai_key.lower():
-            hex_label = f"{ord(row.pua_char):04x}" if len(row.pua_char) == 1 else ""
-            if self._query not in hex_label:
-                return False
-        return True
+        if not self._terms:
+            return True
+        hex_label = f"{ord(row.pua_char):04x}" if len(row.pua_char) == 1 else ""
+        return any(term in row.thai_key.lower() or term in hex_label for term in self._terms)
 
 
 class PuaMappingDialog(QDialog):
@@ -259,12 +271,20 @@ class PuaMappingDialog(QDialog):
         mapping: dict[str, str],
         slot_ctx: PuaSlotContext | None,
         parent: QWidget | None = None,
+        *,
+        allowed_locked: frozenset[int] | None = None,
+        initial_query: str | None = None,
     ) -> None:
-        """Build the editor over `mapping`; `slot_ctx=None` skips font-aware checks."""
+        """Build the editor over `mapping`; `slot_ctx=None` skips font-aware checks.
+
+        `allowed_locked` downgrades user-overridden locked slots to warnings;
+        `initial_query` presets the filter box (e.g. to focus one remapped slot).
+        """
         super().__init__(parent)
         self.setWindowTitle("PUA Mapping")
         self.resize(860, 640)
-        self._model = PuaMapTableModel(mapping, slot_ctx, self)
+        self._slot_ctx = slot_ctx
+        self._model = PuaMapTableModel(mapping, slot_ctx, self, allowed_locked=allowed_locked)
         self._proxy = PuaMapFilterProxy(self)
         self._proxy.setSourceModel(self._model)
         outer = QVBoxLayout(self)
@@ -272,9 +292,11 @@ class PuaMappingDialog(QDialog):
         outer.addWidget(self._build_table(), 1)
         outer.addLayout(self._build_button_row())
         self._summary = QLabel(self)
-        self._update_summary(0, 0, 0)
+        self._update_summary(*self._model.issue_totals())
         outer.insertWidget(1, self._summary)
         self._model.issues_recomputed.connect(self._update_summary)
+        if initial_query:
+            self._filter_input.setText(initial_query)
 
     def result_mapping(self) -> dict[str, str]:
         """Return the mapping as currently edited (Apply semantics are the caller's)."""
@@ -285,7 +307,7 @@ class PuaMappingDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(QLabel("Filter:", self))
         self._filter_input = QLineEdit(self)
-        self._filter_input.setPlaceholderText("Thai cluster or hex (e.g. E003)")
+        self._filter_input.setPlaceholderText("Thai cluster or hex, space-separated (e.g. E003 E610)")
         self._filter_input.textChanged.connect(self._proxy.set_query)
         row.addWidget(self._filter_input, 1)
         self._issues_toggle = QCheckBox("Issues only", self)
@@ -313,23 +335,29 @@ class PuaMappingDialog(QDialog):
         return self._view
 
     def _build_button_row(self) -> QHBoxLayout:
-        """Build Jump-to-Next-Issue plus Cancel/Apply buttons."""
+        """Build Jump-to-Next-Issue, Next-Free, and Cancel/Apply buttons."""
         row = QHBoxLayout()
         jump_btn = QPushButton("Jump to Next Issue", self)
         jump_btn.clicked.connect(self._jump_to_next_issue)
         row.addWidget(jump_btn)
+        next_free_btn = QPushButton("Next Free → Selected", self)
+        next_free_btn.setToolTip("Fill the selected row's PUA cell with the lowest unconflicted codepoint")
+        next_free_btn.clicked.connect(self._assign_next_free)
+        row.addWidget(next_free_btn)
         row.addStretch(1)
         cancel_btn = QPushButton("Cancel", self)
         cancel_btn.clicked.connect(self.reject)
         row.addWidget(cancel_btn)
-        apply_btn = QPushButton("Apply", self)
-        apply_btn.setDefault(True)
-        apply_btn.clicked.connect(self.accept)
-        row.addWidget(apply_btn)
+        self._apply_btn = QPushButton("Apply", self)
+        self._apply_btn.setDefault(True)
+        self._apply_btn.clicked.connect(self.accept)
+        row.addWidget(self._apply_btn)
         return row
 
     def _update_summary(self, errors: int, warnings: int, edited: int) -> None:
-        """Refresh the summary line from the latest recomputation totals."""
+        """Refresh the summary line and gate Apply on the current totals."""
+        self._apply_btn.setEnabled(errors == 0)
+        self._apply_btn.setToolTip("Fix all mapping errors to enable Apply" if errors else "")
         total = self._model.rowCount()
         parts = [f"{total} entries"]
         parts.append(f"{errors} error(s)" if errors == 1 else f"{errors} errors")
@@ -337,6 +365,21 @@ class PuaMappingDialog(QDialog):
         if edited:
             parts.append(f"{edited} edited")
         self._summary.setText(" · ".join(parts))
+
+    def _assign_next_free(self) -> None:
+        """Fill the selected row's PUA cell with the lowest codepoint free of mapping and font conflicts."""
+        index = self._view.selectionModel().currentIndex()
+        source_row = self._proxy.mapToSource(index).row()
+        if source_row < 0:
+            return
+        used = set(self._model.result_mapping().values())
+        if self._slot_ctx is not None:
+            used |= {chr(cp) for cp in self._slot_ctx.cmap if PUA_RANGE_START <= cp <= PUA_RANGE_END}
+        try:
+            codepoint = next_free_codepoint(PUA_RANGE_START, used)
+        except RuntimeError:
+            return
+        self._model.setData(self._model.index(source_row, int(_Column.PUA)), f"{codepoint:04X}")
 
     def _jump_to_next_issue(self) -> None:
         """Select and scroll to the next flagged row after the current selection."""
@@ -352,6 +395,3 @@ class PuaMappingDialog(QDialog):
             proxy_index, self._view.selectionModel().SelectionFlag.ClearAndSelect
         )
         self._view.scrollTo(proxy_index)
-
-
-__all__ = ["PuaMapFilterProxy", "PuaMapTableModel", "PuaMappingDialog"]

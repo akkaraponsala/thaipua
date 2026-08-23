@@ -218,7 +218,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 # ThaiPUA
-pua_mapping.json
+layout.json
 profiles/
+pua_mapping.json
 settings.json
 thaipua.log.*

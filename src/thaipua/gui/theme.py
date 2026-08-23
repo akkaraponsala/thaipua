@@ -225,19 +225,3 @@ def save_theme_mode(mode: ThemeMode, path: str | Path | None = None) -> None:
     data["theme"] = mode.value
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     settings_path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-
-
-__all__ = [
-    "DARK_PALETTE",
-    "DEFAULT_THEME_MODE",
-    "LIGHT_PALETTE",
-    "Palette",
-    "ThemeMode",
-    "apply_theme",
-    "current_theme_mode",
-    "get_palette",
-    "load_theme_mode",
-    "resolve_system_theme",
-    "resolved_theme_mode",
-    "save_theme_mode",
-]

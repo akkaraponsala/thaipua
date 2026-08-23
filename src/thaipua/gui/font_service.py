@@ -10,7 +10,11 @@ from typing import Any
 
 from fontTools.ttLib import TTFont
 
-from thaipua.core.constants import DEFAULT_PROFILES_DIR, DEFAULT_PUA_MAP_PATH, PUA_RANGE_END, PUA_RANGE_START
+from thaipua.core.constants import (
+    DEFAULT_LAYOUT_PATH,
+    DEFAULT_PROFILES_DIR,
+    DEFAULT_PUA_MAP_PATH,
+)
 from thaipua.core.encoding import load_pua_map_dict
 from thaipua.core.fonttools.alternates import GlyphSubstitution, find_glyph_substitutions
 from thaipua.core.fonttools.bounding_box import BoundingBox
@@ -20,7 +24,13 @@ from thaipua.core.fonttools.composer import (
     InstallStatus,
     ThaiPuaFontGenerator,
 )
-from thaipua.core.fonttools.map_validation import PuaSlotContext, slot_context_from_font
+from thaipua.core.fonttools.map_validation import (
+    PuaMapIssue,
+    PuaSlotContext,
+    slot_context_from_font,
+    validate_pua_map,
+)
+from thaipua.core.fonttools.occupancy import PuaOccupant, scan_pua_occupants
 from thaipua.core.fonttools.settings import (
     SUB_ABOVE_VOWEL,
     SUB_BELOW_VOWEL,
@@ -30,8 +40,19 @@ from thaipua.core.fonttools.settings import (
     save_placement_settings,
 )
 from thaipua.core.fonttools.specs import CompositeSpec, iter_composite_specs
+from thaipua.core.layout import (
+    DEFAULT_BASE_CODEPOINT,
+    LayoutConflict,
+    LayoutState,
+    canonical_codepoint,
+    canonical_tail_start,
+    find_conflicts,
+    find_relocation_target,
+    load_layout_state,
+    save_layout_state,
+)
 from thaipua.core.profiles import resolve_settings_profile
-from thaipua.core.pua_map import THAI_SUFFIXES
+from thaipua.core.pua_map import save_pua_map
 from thaipua.gui.glyph_pen import PathLike, render_glyph_path, render_placed_components
 
 logger = logging.getLogger(__name__)
@@ -73,6 +94,8 @@ class FontService:
         self._gen: ThaiPuaFontGenerator | None = None
         self._pua_map_path = DEFAULT_PUA_MAP_PATH
         self._pua_map: dict[str, str] = {}
+        self._layout_path = DEFAULT_LAYOUT_PATH
+        self._layout: LayoutState | None = None
 
     @property
     def is_loaded(self) -> bool:
@@ -106,12 +129,36 @@ class FontService:
 
     @property
     def pua_map_path(self) -> str:
-        """Return the path to the on-disk PUA map mutated by `ensure_pua_map`."""
+        """Return the path to the on-disk PUA map cache."""
         return self._pua_map_path
 
     def set_pua_map_path(self, path: str) -> None:
-        """Change the on-disk PUA map path consulted by `load_pua_map`/`ensure_pua_map`/`save_pua_map`."""
+        """Change the on-disk PUA map cache path used by `load_pua_map`/`save_pua_map`."""
         self._pua_map_path = path
+
+    def allowed_locked(self) -> frozenset[int]:
+        """Return the PUA codepoints whose locked slots the user approved for overwrite."""
+        return self._layout.overrides if self._layout is not None else frozenset()
+
+    def override_slot(self, codepoint: int) -> None:
+        """Approve overwriting the locked slot at `codepoint` and persist it with the layout.
+
+        No-op with a warning before a layout is loaded — approvals are part of layout state.
+        """
+        if self._layout is None:
+            logger.warning("Ignoring override for U+%04X: no layout loaded", codepoint)
+            return
+        self._layout.overrides |= {codepoint}
+        logger.info("Approved overwrite of U+%04X", codepoint)
+        self._persist_layout()
+
+    def clear_override(self, codepoint: int) -> None:
+        """Revoke the overwrite approval for `codepoint`; no-op when absent or unloaded."""
+        if self._layout is None or codepoint not in self._layout.overrides:
+            return
+        self._layout.overrides -= {codepoint}
+        logger.info("Revoked overwrite approval for U+%04X", codepoint)
+        self._persist_layout()
 
     def load_font(
         self, path: str | Path, settings: PlacementSettings | None = None, profiles_dir: str | Path | None = None
@@ -144,44 +191,113 @@ class FontService:
         self._pua_map = load_pua_map_dict(target)
         return self._pua_map
 
-    def ensure_pua_map(self) -> dict[str, str]:
-        """Load the PUA map, allocating a full mapping only when the file is empty.
+    def set_layout_path(self, path: str) -> None:
+        """Change the on-disk layout path; the cached state is re-read on next use."""
+        self._layout_path = path
+        self._layout = None
 
-        Pre-existing mappings are returned untouched; collisions surface through
-        validation and skipped installs instead.
+    def load_layout(self) -> dict[str, str]:
+        """Load layout configuration, bootstrapping the canonical default when missing.
+
+        Materializes the PUA-map cache file so text encode/decode works before any
+        font is loaded; returns the effective Thai→PUA map.
         """
-        mapping = self.load_pua_map()
-        if not mapping:
-            logger.info("PUA map empty at %s; allocating full mapping", self._pua_map_path)
-            mapping = self.allocate_pua_map()
+        self._layout = load_layout_state(self._layout_path)
+        if self._layout is None:
+            self._layout = LayoutState()
+            logger.info("Bootstrapped canonical layout (base U+%04X)", self._layout.base)
+        return self._persist_layout()
+
+    def layout_base(self) -> int:
+        """Return the current canonical origin; the default when no layout is loaded."""
+        return self._layout.base if self._layout is not None else DEFAULT_BASE_CODEPOINT
+
+    def layout_tail_start(self) -> int | None:
+        """Return the first relocation-zone codepoint, or `None` before a layout load."""
+        return canonical_tail_start(self._layout.base) if self._layout is not None else None
+
+    def set_base_codepoint(self, base: int) -> dict[str, str]:
+        """Change the canonical layout origin and rematerialize; returns the updated map.
+
+        Existing relocations are kept verbatim; targets that now collide with
+        canonical assignments surface as validator errors in the mapping editor.
+        """
+        if self._layout is None:
+            raise RuntimeError("Cannot set the base codepoint before loading a layout.")
+        self._layout.base = base
+        logger.info("Layout base moved to U+%04X", base)
+        return self._persist_layout()
+
+    def relocate_key(self, thai_key: str) -> int | None:
+        """Move `thai_key` to the first free tail-zone slot; returns its new codepoint.
+
+        Returns `None` when no layout is loaded or the PUA range is exhausted.
+        """
+        if self._layout is None:
+            return None
+        used = set(self._layout.effective_map().values())
+        font_cps = {cp for cp in self._gen.font.getBestCmap()} if self._gen is not None and self._gen.font else None
+        try:
+            target = find_relocation_target(canonical_tail_start(self._layout.base), used, font_cps)
+        except RuntimeError:
+            logger.error("No free slot to relocate %r", thai_key)
+            return None
+        self._layout.relocations[thai_key] = chr(target)
+        logger.info("Relocated %r to U+%04X", thai_key, target)
+        self._persist_layout()
+        return target
+
+    def layout_conflicts(self) -> list[LayoutConflict]:
+        """Return conflicts between the effective map and the live font's slots.
+
+        Slots the user already overrode are not reported. Empty without a loaded
+        font — reconciliation needs real occupants.
+        """
+        if self._gen is None or self._gen.font is None or self._layout is None:
+            return []
+        return find_conflicts(self._layout.effective_map(), self.pua_occupants(), resolved=self.allowed_locked())
+
+    def apply_manual_edits(self, new_map: dict[str, str]) -> dict[str, str]:
+        """Fold hand-edited mapping values into relocation deltas and return the updated map.
+
+        Values matching their canonical codepoint clear the key's relocation; any
+        other single-character value records an explicit relocation.
+        """
+        if self._layout is None:
+            raise RuntimeError("Cannot apply manual edits before loading a layout.")
+        for thai_key, pua_char in new_map.items():
+            canonical = canonical_codepoint(thai_key, self._layout.base)
+            if canonical is not None and len(pua_char) == 1 and ord(pua_char) == canonical:
+                self._layout.relocations.pop(thai_key, None)
+            else:
+                self._layout.relocations[thai_key] = pua_char
+        logger.info("Applied %d relocation(s) after manual edit", len(self._layout.relocations))
+        return self._persist_layout()
+
+    def _persist_layout(self) -> dict[str, str]:
+        """Write layout state and the materialized map cache; returns the effective map."""
+        if self._layout is None:
+            raise RuntimeError("Cannot persist a layout before loading one.")
+        save_layout_state(self._layout, self._layout_path)
+        mapping = self._layout.effective_map()
+        save_pua_map(mapping, self._pua_map_path)
+        self._pua_map = mapping
         return mapping
 
-    def save_pua_map(self, mapping: dict[str, str]) -> None:
-        """Persist `mapping` back to the stored PUA-map path as UTF-8 JSON."""
-        from thaipua.core.pua_map import save_pua_map
+    def validation_issues(self, pua_map: dict[str, str]) -> list[PuaMapIssue]:
+        """Validate `pua_map` against the live font's slots; an empty list means clean.
 
-        save_pua_map(mapping, self._pua_map_path)
-
-    def allocate_pua_map(self) -> dict[str, str]:
-        """Allocate a complete mapping, reserving codepoints already mapped in the live font."""
-        from thaipua.core.pua_map import ensure_pua_map
-
-        ensure_pua_map(
-            THAI_SUFFIXES,
-            path=self._pua_map_path,
-            start_pua=PUA_RANGE_START,
-            reserved_pua_chars=self._occupied_pua_chars(),
-        )
-        return self.load_pua_map()
-
-    def _occupied_pua_chars(self) -> set[str]:
-        """Return PUA characters mapped in the live font's `cmap`.
-
-        Returns an empty set when no font is loaded.
+        User-approved overrides downgrade their locked-slot verdicts to warnings.
+        Structural checks still run without a loaded font; font-aware slot checks
+        are skipped until one is loaded.
         """
+        return validate_pua_map(pua_map, self.pua_slot_context(), allowed_locked=self.allowed_locked())
+
+    def pua_occupants(self) -> list[PuaOccupant]:
+        """Scan the live font's PUA range; empty without a loaded font."""
         if self._gen is None or self._gen.font is None:
-            return set()
-        return {chr(cp) for cp in self._gen.font.getBestCmap() if PUA_RANGE_START <= cp <= PUA_RANGE_END}
+            return []
+        return scan_pua_occupants(self._gen.font)
 
     def pua_slot_context(self) -> PuaSlotContext | None:
         """Snapshot the font's slot facts for mapping validation, or `None` without a font."""
@@ -424,6 +540,7 @@ class FontService:
             spec.above_uni,
             spec.tone_uni,
             settings=settings,
+            allowed_locked=self.allowed_locked(),
         )
         logger.debug("Regenerated U+%04X: %s", spec.pua_code, result.status.value)
         if path is None:
@@ -434,6 +551,7 @@ class FontService:
         """Rebuild every composite in the map, returning one result per spec."""
         if self._gen is None:
             raise RuntimeError("Cannot regenerate composites without a loaded font.")
+        allowed = self.allowed_locked()
         return [
             self._gen.install_composite(
                 spec.pua_code,
@@ -442,6 +560,7 @@ class FontService:
                 spec.above_uni,
                 spec.tone_uni,
                 settings=settings,
+                allowed_locked=allowed,
             )
             for spec in iter_composite_specs(pua_map)
         ]
@@ -492,6 +611,8 @@ class FontService:
         self._src_path = None
         self._output_path = None
         self._profiles_dir = DEFAULT_PROFILES_DIR
+        self._layout_path = DEFAULT_LAYOUT_PATH
+        self._layout = None
 
 
 def _units_per_em(font: TTFont) -> int:
@@ -553,6 +674,3 @@ class _NullPath:
 
     def closeSubpath(self) -> None:
         return
-
-
-__all__ = ["ComponentBox", "FontService", "GlyphRender"]

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPushBut
 
 from thaipua.gui import icons, theme
 from thaipua.gui.state import GRID_COLUMNS, GRID_ROWS
+from thaipua.gui.theme import Palette
 
 GridMode = Literal["consonant", "pua"]
 
@@ -45,7 +46,12 @@ class _GlyphSurface(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     def set_content(
-        self, text: str, path: QPainterPath | None, *, ref_ascent: float = 0.0, ref_descent: float = 0.0
+        self,
+        text: str,
+        path: QPainterPath | None,
+        *,
+        ref_ascent: float = 0.0,
+        ref_descent: float = 0.0,
     ) -> None:
         """Swap the painted content to `path` (or `text` when `path` is `None`)."""
         self._text = text
@@ -70,6 +76,10 @@ class _GlyphSurface(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         palette = theme.get_palette()
+        self._paint_content(painter, palette)
+
+    def _paint_content(self, painter: QPainter, palette: Palette) -> None:
+        """Paint the glyph path or fallback text."""
         if self._path is not None:
             rect = self._path.boundingRect()
             if rect.width() <= 0 or rect.height() <= 0:
@@ -140,6 +150,7 @@ class _GlyphCell(QFrame):
         else:
             self._art.set_content("", None)
             self._small.setText("")
+            self.setToolTip("")
         self._refresh_style()
 
     def set_subtitle_font(self, font: QFont) -> None:

@@ -56,6 +56,7 @@ class InstallStatus(Enum):
     INSTALLED = "installed"
     REPLACED_OWNED = "replaced_owned"
     REPLACED_FOREIGN_COMPOSITE = "replaced_foreign_composite"
+    OVERRIDDEN_LOCKED = "overridden_locked"
     SKIPPED_LOCKED = "skipped_locked"
     SKIPPED_MISSING_CONSONANT = "skipped_missing_consonant"
 
@@ -376,16 +377,19 @@ class ThaiPuaFontGenerator:
         tone_uni: int | None = None,
         *,
         settings: PlacementSettings | None = None,
+        allowed_locked: frozenset[int] | None = None,
     ) -> InstallResult:
         """Install a composite glyph at `pua_code` and report the outcome.
 
         Free, owned, and replaceable slots are rebuilt in place under the stable
         `thaipua_XXXX` name, keeping glyph order and cmap mapping intact. Locked slots
-        and missing consonants are skipped without writing anything.
+        and missing consonants are skipped without writing anything, except locked
+        slots listed in `allowed_locked`, which install with `OVERRIDDEN_LOCKED`.
         """
         existing = self._cmap.get(pua_code)
         ownership = classify_pua_slot(existing, self.font.get("glyf"))
-        if ownership is SlotOwnership.LOCKED:
+        overridden = ownership is SlotOwnership.LOCKED and allowed_locked is not None and pua_code in allowed_locked
+        if ownership is SlotOwnership.LOCKED and not overridden:
             logger.warning(
                 "[LOCKED] U+%04X: mapped to '%s' (unrecognized content); slot not overwritten",
                 pua_code,
@@ -405,8 +409,10 @@ class ThaiPuaFontGenerator:
         glyph_name = f"{TOOL_GLYPH_PREFIX}{pua_code:04X}"
         self._install_composite_glyph(glyph_name, new_glyph, pua_code, width_from=components[0].glyph_name)
         parts = [components[0].glyph_name] + [f"+{c.glyph_name}" for c in components[1:]]
-        status = _INSTALL_STATUS_BY_OWNERSHIP[ownership]
-        if ownership is SlotOwnership.REPLACEABLE:
+        status = InstallStatus.OVERRIDDEN_LOCKED if overridden else _INSTALL_STATUS_BY_OWNERSHIP[ownership]
+        if overridden:
+            logger.info("[OVERRIDE-LOCKED] U+%04X: replaced locked glyph '%s' per user override", pua_code, existing)
+        elif ownership is SlotOwnership.REPLACEABLE:
             logger.info(
                 "[REPLACE-FOREIGN] U+%04X: replaced foreign composite '%s' with '%s'", pua_code, existing, glyph_name
             )
@@ -437,11 +443,3 @@ class ThaiPuaFontGenerator:
         self._cmap[unicode_point] = glyph_name
         self.bbox.invalidate(glyph_name)
         return replaced
-
-
-__all__ = [
-    "ComponentPlacement",
-    "InstallResult",
-    "InstallStatus",
-    "ThaiPuaFontGenerator",
-]

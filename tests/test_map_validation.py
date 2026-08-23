@@ -25,7 +25,16 @@ def _context(
 
 
 def _severities_for(mapping: dict[str, str], context: PuaSlotContext | None) -> dict[str, list[IssueSeverity]]:
-    issues = validate_pua_map(mapping, context)
+    return _severities_with(context, allowed=None, mapping=mapping)
+
+
+def _severities_with(
+    context: PuaSlotContext | None,
+    *,
+    allowed: frozenset[int] | None,
+    mapping: dict[str, str],
+) -> dict[str, list[IssueSeverity]]:
+    issues = validate_pua_map(mapping, context, allowed_locked=allowed)
     grouped: dict[str, list[IssueSeverity]] = {}
     for issue in issues:
         grouped.setdefault(issue.thai_key, []).append(issue.severity)
@@ -64,6 +73,34 @@ def test_duplicate_values_flag_every_involved_key() -> None:
 def test_locked_occupant_is_an_error_with_font_context() -> None:
     context = _context(cmap={0xE000: "logo"}, glyf={"logo": False})
     severities = _severities_for({"ก": chr(0xE000)}, context)
+    assert severities == {"ก": [IssueSeverity.ERROR]}
+
+
+def test_overridden_locked_occupant_downgrades_to_warning() -> None:
+    context = _context(cmap={0xE000: "logo"}, glyf={"logo": False})
+
+    issues = validate_pua_map({"ก": chr(0xE000)}, context, allowed_locked=frozenset({0xE000}))
+
+    assert [issue.severity for issue in issues] == [IssueSeverity.WARNING]
+    assert "override" in issues[0].message
+
+
+def test_locked_issues_carry_their_slot_codepoint() -> None:
+    context = _context(cmap={0xE000: "logo", 0xE001: "other"}, glyf={"logo": False, "other": True})
+    issues = validate_pua_map({"ก": chr(0xE000), "ข": chr(0xE001)}, context, allowed_locked=frozenset({0xE001}))
+    by_key = {issue.thai_key: issue.slot_codepoint for issue in issues}
+    assert by_key == {"ก": 0xE000, "ข": 0xE001}
+
+
+def test_structural_issues_have_no_slot_codepoint() -> None:
+    issues = validate_pua_map({"ก": chr(0xE000), "ข": chr(0xE000)}, None)
+    assert issues
+    assert all(issue.slot_codepoint is None for issue in issues)
+
+
+def test_override_for_another_codepoint_keeps_the_error() -> None:
+    context = _context(cmap={0xE000: "logo"}, glyf={"logo": False})
+    severities = _severities_with(context, allowed=frozenset({0xE001}), mapping={"ก": chr(0xE000)})
     assert severities == {"ก": [IssueSeverity.ERROR]}
 
 

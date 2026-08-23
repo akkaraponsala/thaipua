@@ -17,11 +17,13 @@ thaipua/
 │   │   │   ├── ownership.py          # SlotOwnership + classify_pua_slot, TOOL_GLYPH_PREFIX ("thaipua_")
 │   │   │   ├── cff_convert.py        # CFF (.otf) → TrueType in-memory working-copy conversion at load
 │   │   │   ├── map_validation.py     # validate_pua_map → list[PuaMapIssue], slot_context_from_font
+│   │   │   ├── occupancy.py          # scan_pua_occupants → PuaOccupant (font-wide PUA slot report)
 │   │   │   ├── alternates.py         # GSUB discovery: find_glyph_substitutions
 │   │   │   └── bounding_box.py       # BoundingBoxCache
 │   │   ├── constants.py              # APP_DATA_DIR / ASSETS_DIR, PUA_RANGE_START/END (U+E000..U+F8FF), SARA_AM_REPLACEMENTS
 │   │   ├── encoding.py               # Thai↔PUA encode/decode, normalize_sara_am, load_pua_map_dict
-│   │   ├── pua_map.py                # Allocation: next_free_codepoint, allocate_consonant_block, ensure_pua_map, THAI_SUFFIXES
+│   │   ├── pua_map.py                # Cluster constants, map-file persistence, free-slot search
+│   │   ├── layout.py                 # Deterministic PUA layout: canonical base + relocations + overrides + conflict detection
 │   │   ├── profiles.py               # Tiered profile resolution (resolve_settings_profile)
 │   │   ├── string_table.py           # Bethesda .STRINGS/.DLSTRINGS/.ILSTRINGS codec (StringTableError)
 │   │   ├── text_encoding.py          # detect_text_encoding (BOM sniffing, utf-8 → cp1252 fallback)
@@ -32,10 +34,10 @@ thaipua/
 │   │   ├── glyph_pen.py              # PathLike recorder, render_placed_components — PySide6-free
 │   │   ├── main_window.py            # Single mutator of AppState, owns QTimer debounce, wiring of all panes
 │   │   ├── theme.py / icons.py       # PySide6 allowed
-│   │   └── widgets/                  # controls_pane, glyph_grid_pane, preview_pane, top_toolbar, status_footer, dialogs, pua_mapping_dialog
+│   │   └── widgets/                  # controls_pane, glyph_grid_pane, preview_pane, top_toolbar, status_footer, dialogs, pua_mapping_dialog, occupancy_dialog
 │   └── app.py + __main__.py          # Entry: uv run python -m thaipua → app.main
 ├── assets/fonts/Sarabun-Regular.ttf  # Sample font for tests
-├── profiles/ + pua_mapping.json + settings.json  # Runtime data (repo root in dev)
+├── layout.json + pua_mapping.json + profiles/ + settings.json  # Runtime data (repo root in dev)
 ├── pyproject.toml                    # src layout, ruff/mypy/pytest config
 └── pysidedeploy.spec                 # Nuitka bundle config
 ```
@@ -49,20 +51,21 @@ thaipua/
 - Keep these layers **PySide6-free** (stdlib + fontTools only): `core/`, `gui/state.py`, `gui/font_service.py`, `gui/glyph_pen.py`. Only `app.py`, `main_window.py`, `theme.py`, `icons.py`, and `widgets/*` may import PySide6.
 - This split keeps `core/` unit-testable without `QApplication`.
 
-### PUA Mapping & Allocation Model
+### PUA Mapping & Layout Model
 
-- `pua_mapping.json` maps `consonant+marks` Thai keys → single PUA chars. It's insertion-ordered; one consonant's variants occupy consecutive codepoints starting at `U+E000`. `CompositeSpec`s are derived via `iter_composite_specs` — glyph generation is driven entirely by this file.
-- Allocation covers `THAI_CONSONANTS` (42 chars) × `THAI_SUFFIXES` (48 suffixes) in `core/pua_map.py`; `next_free_codepoint` scans forward skipping used chars.
-- `FontService.ensure_pua_map` only allocates when the file is missing/empty (first-run bootstrap). A pre-existing mapping is **never mutated on load** — it belongs to the user. Fresh allocation reserves the live font's cmap PUA chars (`_occupied_pua_chars`). Collisions surface as validator badges (`map_validation.validate_pua_map` in the mapping dialog) and skipped installs, never silent repair.
+- The layout is **deterministic**: `codepoint = base + ordinal` (`core/layout.py`), ordinal = consonant index × 48 suffixes. Every install gets the same mapping regardless of font load order, so encoded text stays portable. `base` is user-configurable (`layout.json`, default `U+E000`; Settings dialog).
+- `layout.json` stores `{base, relocations, overrides}`; `pua_mapping.json` is a **derived cache** of the effective map consumed by the encode/decode pipeline — safe to regenerate anytime.
+- Divergence from canonical exists only as explicit relocations: editor hex edits fold into deltas via `FontService.apply_manual_edits`; `relocate_key` picks the first free tail-zone slot past the canonical block.
+- Conflicts (effective-map slots occupied by foreign LOCKED/REPLACEABLE content — see `scan_pua_occupants`) never prompt modally: the footer shows `⚠ N mapped slot(s) conflict` and the toolbar's PUA Slots report (`occupancy_dialog.py`) resolves them via per-row Override/Relocate/Remap or the bulk *All* buttons. Overwrite → overrides in `layout.json`; Relocate → tail zone. Unresolved conflicts still block Save through `validate_pua_map`.
 - SARA AM: `U+0E33` is never stored in keys. `encoding.normalize_sara_am` converts it to `NIKHHIT U+0E4D + SARA AA U+0E32` everywhere; `constants.SARA_AM_REPLACEMENTS` handles the tone variants.
 - THANTHAKHAT `U+0E4C` is treated as a tone mark (it stacks above vowels like the four true tone marks) — see `specs.py`.
 
-### Install Model (slot ownership — no eviction step)
+### Install Model (slot ownership)
 
 - CFF sources (.otf) are converted to a TrueType working copy **in memory at load** (`cff_convert.py`, cu2qu); the source file is untouched and Save-Font defaults to `<stem>_pua.ttf`. Installs therefore always target `glyf`.
-- `composer.install_composite(pua_code, ...)` classifies the target slot via `ownership.classify_pua_slot`: FREE / OWNED / REPLACEABLE proceed; LOCKED (unrecognized non-composite content or dangling cmap entries) returns `InstallStatus.SKIPPED_LOCKED`; missing consonant glyph returns `SKIPPED_MISSING_CONSONANT`. Callers surface skip statuses instead of inferring from logs.
+- `composer.install_composite(pua_code, ...)` classifies the target slot via `ownership.classify_pua_slot`: FREE / OWNED / REPLACEABLE proceed; LOCKED (unrecognized non-composite content or dangling cmap entries) returns `InstallStatus.SKIPPED_LOCKED` unless listed in the `allowed_locked` frozenset, which installs with `OVERRIDDEN_LOCKED`; missing consonant glyph returns `SKIPPED_MISSING_CONSONANT`. Callers surface skip statuses instead of inferring from logs. Overrides persist in `layout.json`; `validate_pua_map(allowed_locked=...)` downgrades overridden slots ERROR→WARNING so the save gate passes.
 - Composites install under stable names `thaipua_XXXX`, replacing any existing glyph **in place** — glyph order entry and cmap mapping survive rebuilds, so live preview edits never need eviction or glyph-order churn. `_install_composite_glyph` invalidates the bbox cache per write.
-- Nothing touches disk until *Save Font*.
+- Two persistence policies by design: layout state (`layout.json` + `pua_mapping.json`) writes **eagerly** on every resolution/edit; the **font binary** stays in memory until *Save Font*.
 
 ### Rendering Paths (read-only vs. mutating)
 
@@ -105,11 +108,12 @@ uv run pyside6-deploy -c pysidedeploy.spec  # bundle → build/thaipua.dist/
 
 `constants._runtime_root()` returns the repo root unless `is_standalone_build()` (Nuitka sets `__compiled__`, not just `sys.frozen`), then the exe dir. `ensure_app_data_dirs()` creates `profiles/` and seeds `default.json`; `app.main` calls it before opening the GUI. On load the app creates/mutates:
 
-- `pua_mapping.json` — auto-allocated starting at `U+E000`
+- `layout.json` — `{base, relocations, overrides}`; the authoritative layout state (auto-bootstrapped to the canonical default)
+- `pua_mapping.json` — materialized cache of the effective map, regenerated on every layout change
 - `profiles/default.json` (seeded) and `profiles/<stem>.json` (written on Save Font)
 - `settings.json` (theme)
 
-Don't commit these unless intentional. Tests isolate them via explicit `base_dir` / `profiles_dir` params → `tmp_path`.
+Don't commit these unless intentional. Tests isolate them via explicit path params (`set_layout_path`, `base_dir`, ...) → `tmp_path`.
 
 ## Coding Style & Naming Conventions
 
@@ -127,15 +131,14 @@ Don't commit these unless intentional. Tests isolate them via explicit `base_dir
 
 ## Testing Guidelines
 
-- Tests live under `tests/test_*.py`: `test_install_composite.py` (integration vs the real `assets/fonts/Sarabun-Regular.ttf`: classification, replace-in-place, locked skips, save/reload prefix persistence), `test_cff_convert.py` (builds a real `.otf` via fontTools `FontBuilder`), `test_font_service.py` + `test_ownership.py` (duck-typed `_FakeFont`/`glyf` fakes typed with `cast`), plus `test_pua_map.py`, `test_settings.py`, `test_map_validation.py`, `test_logging.py`.
-- The PySide6-free layers are unit-testable without `QApplication` — keep it that way. `glyph_pen` uses the `PathLike` duck type so tests use a lightweight recorder.
+- Tests live under `tests/test_*.py`; notable: `test_install_composite.py` (integration vs the real `assets/fonts/Sarabun-Regular.ttf`), `test_cff_convert.py` (builds a real `.otf` via fontTools `FontBuilder`), `test_layout.py` (deterministic layout + storage + conflicts), `test_font_service.py` / `test_ownership.py` (duck-typed `_FakeFont`/`glyf` fakes typed with `cast`).
+- `glyph_pen` uses the `PathLike` duck type so tests use a lightweight recorder.
 - Helpers take explicit paths so tests never touch the repo root — use `tmp_path`.
 - `pytest` already runs with `--cov=src --cov-report=term-missing` via `addopts` — don't add a second coverage invocation.
 
 ## Gotchas / Non-obvious Behaviors
 
-- **Grid vs. viewport refresh:** grid cells lag 300ms behind slider changes (debounce timer); the viewport rebuilds immediately. Don't rebuild the grid per tick.
-- **Pre-existing PUA maps are sacred:** loading never rewrites a user-edited `pua_mapping.json`; bad slots show up as validation issues and LOCKED-skip warnings at install time instead.
+- **The layout is stable by determinism, not by immutability:** assignments never drift silently, but `layout.json`/`pua_mapping.json` are regenerable state — user intent lives in relocations and overrides, not in the cache file.
 - **Consonant protrusion:** only `ฬ` is `"ascender"` in `CONSONANT_PROTRUSION`; every other consonant (including down-protruding descenders `ญ ฐ ฎ ฏ`) falls back to generic tone-within-vowel-family context canonicalization. Don't add descender entries without understanding that logic.
 - **`pysidedeploy.spec`'s `python_path` must stay empty** so `pyside6-deploy` uses the interpreter running the tool (the project venv via `uv run`, both local and CI); a hardcoded absolute path breaks other machines. Run it from the repo root — spec paths resolve relative to cwd.
 - Prefer `InstallResult.status` over log scraping when reacting to installs; every install outcome, including skips, has an explicit status.

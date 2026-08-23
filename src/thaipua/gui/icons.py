@@ -97,6 +97,3 @@ def clear_cache() -> None:
     """Drop every cached icon and renderer."""
     _cache.clear()
     _renderer_cache.clear()
-
-
-__all__ = ["IconName", "clear_cache", "icon"]

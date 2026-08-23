@@ -45,6 +45,3 @@ def classify_pua_slot(cmap_glyph: str | None, glyf: _GlyfLike | None) -> SlotOwn
     if glyf[cmap_glyph].isComposite():
         return SlotOwnership.REPLACEABLE
     return SlotOwnership.LOCKED
-
-
-__all__ = ["TOOL_GLYPH_PREFIX", "SlotOwnership", "classify_pua_slot"]

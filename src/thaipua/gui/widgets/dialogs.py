@@ -91,23 +91,65 @@ class FindSubstitutionDialog(QDialog):
 
 
 class SettingsDialog(QDialog):
-    """Application preferences with a live light/dark/system theme switch."""
+    """Application preferences with a live theme switch and the canonical PUA base."""
 
     def __init__(
-        self, parent: QWidget | None, *, current_mode: ThemeMode | None, on_theme_changed: ThemeCallback | None
+        self,
+        parent: QWidget | None,
+        *,
+        current_mode: ThemeMode | None,
+        on_theme_changed: ThemeCallback | None,
+        base_codepoint: int | None = None,
+        base_tail_start: int | None = None,
+        on_base_changed: Callable[[int], None] | None = None,
     ) -> None:
-        """Build the preferences dialog; `on_theme_changed=None` leaves the radios inert."""
+        """Build preferences; `on_*` callbacks of `None` leave the matching control inert."""
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.resize(440, 260)
+        self.resize(460, 300)
         self._on_theme_changed = on_theme_changed
+        self._on_base_changed = on_base_changed
         self._current_mode = current_mode if current_mode is not None else theme.current_theme_mode()
         outer = QVBoxLayout(self)
         form = QFormLayout()
         form.addRow("Theme:", self._build_theme_row())
+        form.addRow("PUA Base:", self._build_base_row(base_codepoint, base_tail_start))
         outer.addLayout(form)
         outer.addStretch(1)
         outer.addLayout(self._build_button_row())
+
+    def _build_base_row(self, base_codepoint: int | None, tail_start: int | None) -> QWidget:
+        """Build the hex base input with an Apply button and a relocation-zone hint."""
+        holder = QWidget(self)
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        self._base_input = QLineEdit(holder)
+        self._base_input.setMaximumWidth(80)
+        self._base_input.setText(f"{base_codepoint:04X}" if base_codepoint is not None else "")
+        self._base_input.setInputMask("HHHH")
+        self._base_input.setEnabled(self._on_base_changed is not None and base_codepoint is not None)
+        row.addWidget(self._base_input)
+        apply_btn = QPushButton("Apply", holder)
+        apply_btn.setEnabled(self._base_input.isEnabled())
+        apply_btn.clicked.connect(self._apply_base)
+        row.addWidget(apply_btn)
+        hint = f"Relocation zone starts at U+{tail_start:04X}" if tail_start is not None else ""
+        hint_label = QLabel(hint, holder)
+        hint_label.setStyleSheet("color: #80868B; font-size: 8pt;")
+        row.addWidget(hint_label)
+        row.addStretch(1)
+        return holder
+
+    def _apply_base(self) -> None:
+        """Forward the parsed hex base to the callback; ignore malformed input."""
+        text = self._base_input.text().strip()
+        try:
+            base = int(text, 16)
+        except ValueError:
+            self._base_input.setStyleSheet("border: 1px solid #BE3C3C;")
+            return
+        if self._on_base_changed is not None:
+            self._on_base_changed(base)
 
     def _build_theme_row(self) -> QWidget:
         """Build the Theme radio row — Light / Dark (default) / System."""

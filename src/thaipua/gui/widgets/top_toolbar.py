@@ -16,6 +16,7 @@ class TopToolbar(QWidget):
     decode_pua_requested = Signal()
     encode_thai_requested = Signal()
     edit_mapping_requested = Signal()
+    pua_slots_requested = Signal()
     find_substitution_requested = Signal()
     settings_requested = Signal()
 
@@ -43,6 +44,9 @@ class TopToolbar(QWidget):
         self._mapping_btn = QPushButton(self)
         self._mapping_btn.setIcon(icons.icon("table"))
         self._mapping_btn.setToolTip("Edit PUA Mapping")
+        self._slots_btn = QPushButton(self)
+        self._slots_btn.setIcon(icons.icon("binary"))
+        self._slots_btn.setToolTip("PUA Slots & Overrides")
         self._settings_btn = QPushButton(self)
         self._settings_btn.setIcon(icons.icon("settings"))
         self._settings_btn.setToolTip("Settings")
@@ -53,6 +57,7 @@ class TopToolbar(QWidget):
             self._encode_btn,
             self._find_btn,
             self._mapping_btn,
+            self._slots_btn,
             self._settings_btn,
         ]:
             btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -63,6 +68,7 @@ class TopToolbar(QWidget):
         layout.addWidget(self._encode_btn)
         layout.addWidget(self._find_btn)
         layout.addWidget(self._mapping_btn)
+        layout.addWidget(self._slots_btn)
         layout.addStretch(1)
         layout.addWidget(self._settings_btn)
         self._open_btn.clicked.connect(self.open_font_requested)
@@ -71,6 +77,7 @@ class TopToolbar(QWidget):
         self._encode_btn.clicked.connect(self.encode_thai_requested)
         self._find_btn.clicked.connect(self.find_substitution_requested)
         self._mapping_btn.clicked.connect(self.edit_mapping_requested)
+        self._slots_btn.clicked.connect(self.pua_slots_requested)
         self._settings_btn.clicked.connect(self.settings_requested)
         self.set_font_loaded(False)
 
@@ -80,6 +87,7 @@ class TopToolbar(QWidget):
         self._decode_btn.setEnabled(loaded)
         self._encode_btn.setEnabled(loaded)
         self._mapping_btn.setEnabled(loaded)
+        self._slots_btn.setEnabled(loaded)
         self._find_btn.setEnabled(loaded)
 
     def refresh_icons(self) -> None:
@@ -90,4 +98,5 @@ class TopToolbar(QWidget):
         self._encode_btn.setIcon(icons.icon("file-digit"))
         self._find_btn.setIcon(icons.icon("search"))
         self._mapping_btn.setIcon(icons.icon("table"))
+        self._slots_btn.setIcon(icons.icon("binary"))
         self._settings_btn.setIcon(icons.icon("settings"))

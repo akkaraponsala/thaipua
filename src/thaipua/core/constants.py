@@ -5,8 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-PUA_RANGE_START: int = 57344
-PUA_RANGE_END: int = 63743
+PUA_RANGE_START: int = 0xE000
+PUA_RANGE_END: int = 0xF8FF
 STRING_TABLE_EXTENSIONS = {".ILSTRINGS", ".DLSTRINGS", ".STRINGS"}
 SARA_AM_REPLACEMENTS: list[tuple[str, str]] = [("่ำ", "ํ่า"), ("้ำ", "ํ้า"), ("๊ำ", "ํ๊า"), ("๋ำ", "ํ๋า"), ("ำ", "ํา")]
 
@@ -41,6 +41,7 @@ def _assets_dir() -> Path:
 APP_DATA_DIR: Path = _app_data_dir()
 ASSETS_DIR: Path = _assets_dir()
 DEFAULT_PUA_MAP_PATH: str = str(APP_DATA_DIR / "pua_mapping.json")
+DEFAULT_LAYOUT_PATH: str = str(APP_DATA_DIR / "layout.json")
 DEFAULT_PROFILES_DIR: str = str(APP_DATA_DIR / "profiles")
 DEFAULT_PROFILE_FILE_NAME: str = "default.json"
 DEFAULT_SETTINGS_PATH: str = str(APP_DATA_DIR / "settings.json")

@@ -1,18 +1,30 @@
-"""Unit tests for PUA codepoint allocation."""
+"""Unit tests for PUA-map persistence and free-codepoint search."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from thaipua.core.encoding import load_pua_map_dict
-from thaipua.core.pua_map import THAI_CONSONANTS, THAI_SUFFIXES, ensure_pua_map
+from thaipua.core.pua_map import next_free_codepoint, save_pua_map
 
 
-def test_ensure_pua_map_reserves_reserved_codepoints(tmp_path: Path) -> None:
+def test_next_free_codepoint_skips_used_chars() -> None:
+    used = {chr(0xE000), chr(0xE001), chr(0xE003)}
+    assert next_free_codepoint(0xE000, used) == 0xE002
+    assert next_free_codepoint(0xE002, used) == 0xE002
+
+
+def test_save_pua_map_roundtrips(tmp_path: Path) -> None:
     map_path = tmp_path / "pua.json"
-    reserved = {chr(0xE000), chr(0xE001), chr(0xE0FF)}
-    ensure_pua_map(THAI_SUFFIXES, path=map_path, reserved_pua_chars=reserved)
-    mapping = load_pua_map_dict(map_path)
-    assert len(mapping) == len(THAI_CONSONANTS) * len(THAI_SUFFIXES)
-    assert set(mapping.values()).isdisjoint(reserved)
-    assert mapping["กั"] == chr(0xE002)
+    mapping = {"กั": chr(0xE000)}
+    save_pua_map(mapping, map_path)
+    assert load_pua_map_dict(map_path) == mapping
+
+
+def test_next_free_codepoint_raises_when_exhausted() -> None:
+    full = {chr(cp) for cp in range(0xE7F0, 0xF900)}
+    try:
+        next_free_codepoint(0xE7F0, full)
+    except RuntimeError:
+        return
+    raise AssertionError("expected RuntimeError")

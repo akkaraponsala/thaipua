@@ -79,6 +79,28 @@ def test_locked_slot_is_skipped_without_writes(generator: ThaiPuaFontGenerator) 
     assert generator.font.getBestCmap()[pua_code] == simple_name
 
 
+def test_locked_slot_installs_only_with_user_override(generator: ThaiPuaFontGenerator) -> None:
+    cmap = generator.font.getBestCmap()
+    if 0x0E01 not in cmap:
+        pytest.skip("sample font has no ko-kai glyph")
+    simple_name = cmap[0x0E01]
+    pua_code = _first_free_pua_code(generator)
+    _claim_pua_slot(generator, pua_code, simple_name)
+    glyf_before = generator.font["glyf"][simple_name]
+    expected_name = f"{TOOL_GLYPH_PREFIX}{pua_code:04X}"
+
+    denied = generator.install_composite(pua_code, KO_KAI, allowed_locked=frozenset())
+    assert denied.status is InstallStatus.SKIPPED_LOCKED
+
+    result = generator.install_composite(pua_code, KO_KAI, allowed_locked=frozenset({pua_code}))
+
+    assert result.status is InstallStatus.OVERRIDDEN_LOCKED
+    assert result.glyph_name == expected_name
+    assert generator.font.getBestCmap()[pua_code] == expected_name
+    assert generator.font["glyf"][expected_name].isComposite()
+    assert generator.font["glyf"][simple_name] is glyf_before
+
+
 def test_prefix_persists_across_save_reload_roundtrip(generator: ThaiPuaFontGenerator, tmp_path: Path) -> None:
     pua_code = _first_free_pua_code(generator)
     saved_path = tmp_path / "roundtrip.ttf"

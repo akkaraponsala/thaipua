@@ -23,6 +23,3 @@ def detect_text_encoding(file_path: str | Path) -> str:
     except UnicodeDecodeError:
         return "cp1252"
     return "utf-8"
-
-
-__all__ = ["detect_text_encoding"]

@@ -322,31 +322,3 @@ def group_composites_by_consonant(pua_map: dict[str, str]) -> dict[int, list[Com
 def pua_specs_for_consonant(pua_map: dict[str, str], cons_uni: int) -> list[CompositeSpec]:
     """Return the ascending-`pua_code` sorted specs for `cons_uni` in `pua_map`."""
     return group_composites_by_consonant(pua_map).get(cons_uni, [])
-
-
-__all__ = [
-    "GRID_COLUMNS",
-    "GRID_PAGE_SIZE",
-    "GRID_ROWS",
-    "MARK_CATEGORY_LABELS",
-    "SNAP_LABELS",
-    "SUB_ROLE_TO_CATALOG_KEY",
-    "AppState",
-    "MarkCategory",
-    "apply_base_offset",
-    "apply_glyph_substitution",
-    "apply_offset",
-    "apply_snap",
-    "categories_for",
-    "combo_key_for",
-    "current_base_offset",
-    "current_glyph_substitution",
-    "current_mark_offset",
-    "current_snap",
-    "glyph_substitution_candidates",
-    "group_composites_by_consonant",
-    "infer_category",
-    "inferable_consonants",
-    "present_roles_for",
-    "pua_specs_for_consonant",
-]
