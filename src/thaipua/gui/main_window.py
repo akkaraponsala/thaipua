@@ -264,6 +264,7 @@ class MainWindow(QMainWindow):
             return
         dialog = FindSubstitutionDialog(self._service.find_substitutions(), self)
         dialog.exec()
+        dialog.deleteLater()
 
     def _on_edit_mapping(self, initial_query: str | None = None) -> None:
         """Edit the PUA mapping, applying accepted results to state and disk."""
@@ -281,8 +282,10 @@ class MainWindow(QMainWindow):
             initial_query=initial_query,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
+            dialog.deleteLater()
             return
         new_map = dialog.result_mapping()
+        dialog.deleteLater()
         if new_map == self._state.pua_map:
             return
         self._state.pua_map = self._service.apply_manual_edits(new_map)
@@ -303,6 +306,8 @@ class MainWindow(QMainWindow):
         self._occupancy_dialog.bulk_relocate_requested.connect(self._on_bulk_relocate)
         self._occupancy_dialog.bulk_remap_requested.connect(self._on_bulk_remap)
         self._occupancy_dialog.exec()
+        # Parented dialogs outlive their Python reference — destroy explicitly to avoid per-open accumulation.
+        self._occupancy_dialog.deleteLater()
         self._occupancy_dialog = None
 
     def _build_occupancy_rows(self) -> list[OccupancyRow]:
@@ -438,14 +443,16 @@ class MainWindow(QMainWindow):
 
     def _on_settings(self) -> None:
         """Open the preferences dialog with live theme and layout-base switching."""
-        SettingsDialog(
+        dialog = SettingsDialog(
             self,
             current_mode=theme.current_theme_mode(),
             on_theme_changed=self._on_theme_changed,
             base_codepoint=self._service.layout_base(),
             base_tail_start=self._service.layout_tail_start(),
             on_base_changed=self._on_base_changed,
-        ).exec()
+        )
+        dialog.exec()
+        dialog.deleteLater()
 
     def _on_theme_changed(self, mode: ThemeMode) -> None:
         """Apply and persist `mode`, then refresh custom-painted surfaces."""
