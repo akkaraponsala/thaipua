@@ -1,3 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="m15 18-6-6 6-6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <path fill-rule="evenodd" d="M10.41 12L15.8 6.6L15.97 6.24L15.99 5.85L15.86 5.49L15.6 5.2L15.29 5.04L14.95 5L14.62 5.08L14.33 5.26L8.26 11.33L8.06 11.66L8 12L8.06 12.34L8.26 12.67L14.33 18.74L14.62 18.92L14.95 19L15.29 18.96L15.6 18.8L15.86 18.51L15.99 18.15L15.97 17.76L15.8 17.4Z"/>
 </svg>

@@ -17,6 +17,8 @@ IconName = Literal[
     "save",
     "binary",
     "file-input",
+    "file-digit",
+    "file-type-corner",
     "search",
     "settings",
     "table",
