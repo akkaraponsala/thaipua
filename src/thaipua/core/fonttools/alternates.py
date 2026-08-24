@@ -42,12 +42,12 @@ class GsubAlternateIndex:
         if alt_name not in alts:
             alts.append(alt_name)
 
-    def _process_single(self, subtable: Any) -> None:
+    def _register_singles(self, subtable: Any) -> None:
         """Register every `old → new` pair of a GSUB single-substitution subtable."""
         for old, new in subtable.mapping.items():
             self._register(old, new)
 
-    def _process_alternate(self, subtable: Any) -> None:
+    def _register_alternates(self, subtable: Any) -> None:
         """Register every alternate glyph of a GSUB alternate-substitution subtable."""
         for glyph, alt_set in subtable.alternates.items():
             for alt in alt_set:
@@ -62,9 +62,9 @@ class GsubAlternateIndex:
         for lookup in gsub.table.LookupList.Lookup:
             for lookup_type, subtable in iter_subtables(lookup, EXTENSION_SUBST):
                 if lookup_type == SINGLE_SUBST:
-                    self._process_single(subtable)
+                    self._register_singles(subtable)
                 elif lookup_type == ALTERNATE_SUBST:
-                    self._process_alternate(subtable)
+                    self._register_alternates(subtable)
         logger.info("[ALT-GSUB] Discovered alternates for %d glyph(s)", len(self._alternates))
 
     def get_alternates(self, glyph_name: str) -> list[str]:
