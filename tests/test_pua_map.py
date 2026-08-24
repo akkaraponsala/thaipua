@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from thaipua.core.pua_map import load_pua_map_dict, next_free_codepoint, save_pua_map
 
 
@@ -22,8 +24,5 @@ def test_save_pua_map_roundtrips(tmp_path: Path) -> None:
 
 def test_next_free_codepoint_raises_when_exhausted() -> None:
     full = {chr(cp) for cp in range(0xE7F0, 0xF900)}
-    try:
+    with pytest.raises(RuntimeError):
         next_free_codepoint(0xE7F0, full)
-    except RuntimeError:
-        return
-    raise AssertionError("expected RuntimeError")
