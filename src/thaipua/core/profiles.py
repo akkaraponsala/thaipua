@@ -7,13 +7,13 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from thaipua.core.constants import DEFAULT_PROFILE_FILE_NAME, DEFAULT_PROFILES_DIR
 from thaipua.core.fonttools.settings import (
     PlacementSettings,
     default_placement_settings,
     load_placement_settings,
     settings_to_dict,
 )
+from thaipua.core.paths import DEFAULT_PROFILE_FILE_NAME, DEFAULT_PROFILES_DIR
 
 logger = logging.getLogger(__name__)
 

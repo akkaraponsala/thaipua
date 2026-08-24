@@ -20,10 +20,11 @@ thaipua/
 │   │   │   ├── occupancy.py          # scan_pua_occupants → PuaOccupant (font-wide PUA slot report)
 │   │   │   ├── alternates.py         # GSUB discovery: find_glyph_substitutions
 │   │   │   └── bounding_box.py       # BoundingBoxCache
-│   │   ├── constants.py              # APP_DATA_DIR / ASSETS_DIR, PUA_RANGE_START/END (U+E000..U+F8FF), SARA_AM_REPLACEMENTS
+│   │   ├── constants.py              # Domain constants: PUA_RANGE_START/END (U+E000..U+F8FF), SARA_AM_REPLACEMENTS, THAI_CONSONANT_CHARS
+│   │   ├── paths.py                  # Filesystem roots: APP_DATA_DIR / ASSETS_DIR, DEFAULT_*_PATH, standalone-build detection
 │   │   ├── bootstrap.py              # ensure_app_data_dirs (mkdir-only, no domain imports)
-│   │   ├── encoding.py               # Thai↔PUA encode/decode, normalize_sara_am, load_pua_map_dict
-│   │   ├── pua_map.py                # Cluster constants, map-file persistence, free-slot search
+│   │   ├── encoding.py               # Thai↔PUA encode/decode transforms + normalize_sara_am (pure, no map-file IO)
+│   │   ├── pua_map.py                # Thai suffix list, PUA-map load/save, free-slot search
 │   │   ├── layout.py                 # Deterministic PUA layout: canonical base + relocations + overrides + conflict detection
 │   │   ├── profiles.py               # Tiered profile resolution (resolve_settings_profile) + seed_default_profile
 │   │   ├── string_table.py           # Bethesda .STRINGS/.DLSTRINGS/.ILSTRINGS codec (StringTableError)
@@ -107,7 +108,7 @@ uv run pyside6-deploy -c pysidedeploy.spec  # bundle → build/thaipua.dist/
 
 ## Runtime Data (dev writes to `data/` at repo root)
 
-`constants.APP_DATA_DIR` = `_runtime_root()/data`; `_runtime_root()` returns the repo root unless `is_standalone_build()` (Nuitka sets `__compiled__`, not just `sys.frozen`), then the exe dir. `ensure_app_data_dirs()` (`core/bootstrap.py`, mkdir-only) creates the tree; `seed_default_profile()` (`core/profiles.py`) seeds `default.json` when missing; `app.main` calls both before opening the GUI. On load the app creates/mutates under `data/`:
+`paths.APP_DATA_DIR` = `_runtime_root()/data`; `_runtime_root()` returns the repo root unless `is_standalone_build()` (Nuitka sets `__compiled__`, not just `sys.frozen`), then the exe dir. `ensure_app_data_dirs()` (`core/bootstrap.py`, mkdir-only) creates the tree; `seed_default_profile()` (`core/profiles.py`) seeds `default.json` when missing; `app.main` calls both before opening the GUI. On load the app creates/mutates under `data/`:
 
 - `layout.json` — `{base, relocations, overrides}`; the authoritative layout state (auto-bootstrapped to the canonical default)
 - `pua_mapping.json` — materialized cache of the effective map, regenerated on every layout change

@@ -55,6 +55,6 @@ def test_setup_logging_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_log_file_path_defaults_to_app_data_dir() -> None:
-    from thaipua.core.constants import APP_DATA_DIR
+    from thaipua.core.paths import APP_DATA_DIR
 
     assert log_file_path() == APP_DATA_DIR / "logs" / "thaipua.log"

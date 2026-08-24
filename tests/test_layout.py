@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
+from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START, THAI_CONSONANT_CHARS
 from thaipua.core.fonttools.occupancy import PuaOccupant
 from thaipua.core.fonttools.ownership import SlotOwnership
 from thaipua.core.layout import (
@@ -24,7 +24,7 @@ from thaipua.core.layout import (
     max_base_codepoint,
     save_layout_state,
 )
-from thaipua.core.pua_map import THAI_CONSONANTS, THAI_SUFFIXES
+from thaipua.core.pua_map import THAI_SUFFIXES
 
 
 def test_cluster_ordinal_roundtrips_over_every_cluster() -> None:
@@ -46,7 +46,7 @@ def test_canonical_layout_is_dense_and_deterministic() -> None:
 
 
 def test_canonical_codepoint_matches_first_consonant_block() -> None:
-    first_key = f"{THAI_CONSONANTS[0]}{THAI_SUFFIXES[0]}"
+    first_key = f"{THAI_CONSONANT_CHARS[0]}{THAI_SUFFIXES[0]}"
     assert canonical_codepoint(first_key, DEFAULT_BASE_CODEPOINT) == DEFAULT_BASE_CODEPOINT
 
 

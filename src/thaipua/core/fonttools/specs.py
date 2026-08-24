@@ -6,9 +6,11 @@ import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from thaipua.core.constants import THAI_CONSONANT_CHARS
+
 logger = logging.getLogger(__name__)
 
-THAI_CONSONANTS: set[int] = {ord(c) for c in "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"}
+THAI_CONSONANTS: set[int] = {ord(c) for c in THAI_CONSONANT_CHARS}
 BELOW_VOWELS: set[int] = {0x0E38, 0x0E39}
 ABOVE_VOWELS: set[int] = {0x0E31, 0x0E34, 0x0E35, 0x0E36, 0x0E37, 0x0E47, 0x0E4D}
 TONE_MARKS: set[int] = {0x0E48, 0x0E49, 0x0E4A, 0x0E4B, 0x0E4C}

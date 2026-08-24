@@ -10,7 +10,6 @@ from thaipua.core.constants import PUA_RANGE_END
 
 logger = logging.getLogger(__name__)
 
-THAI_CONSONANTS: str = "กขคฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"
 THAI_SUFFIXES: list[str] = [
     "ั",
     "ั่",
@@ -61,6 +60,32 @@ THAI_SUFFIXES: list[str] = [
     "ํ๊",
     "ํ๋",
 ]
+
+
+def load_pua_map_dict(dict_path: str | Path) -> dict[str, str]:
+    """Read a Thai-to-PUA mapping file, skipping malformed entries; return an empty dict on failure."""
+    logger.info("Loading PUA map: '%s'", dict_path)
+    path = Path(dict_path)
+    if not path.exists():
+        logger.error("Map file not found: '%s'", dict_path)
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.exception("Failed to parse map file: '%s'", dict_path)
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    mapping = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key:
+            logger.warning("Skipping map entry %r: key is not a non-empty string", key)
+            continue
+        if not isinstance(value, str) or len(value) != 1:
+            logger.warning("Skipping map entry %r: value %r is not a single PUA character", key, value)
+            continue
+        mapping[key] = value
+    return mapping
 
 
 def next_free_codepoint(start_pua: int, used_pua_chars: set[str]) -> int:

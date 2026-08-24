@@ -11,8 +11,8 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from thaipua.core.bootstrap import ensure_app_data_dirs
-from thaipua.core.constants import ASSETS_DIR
 from thaipua.core.logging import setup_logging
+from thaipua.core.paths import ASSETS_DIR
 from thaipua.core.profiles import seed_default_profile
 from thaipua.gui.main_window import MainWindow
 

@@ -6,7 +6,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from thaipua.core.constants import APP_DATA_DIR
+from thaipua.core.paths import APP_DATA_DIR
 
 LOG_DIR_NAME: str = "logs"
 LOG_FILE_NAME: str = "thaipua.log"

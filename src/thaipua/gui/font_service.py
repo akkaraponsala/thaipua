@@ -10,13 +10,7 @@ from typing import Any
 
 from fontTools.ttLib import TTFont
 
-from thaipua.core.constants import (
-    DEFAULT_LAYOUT_PATH,
-    DEFAULT_PROFILES_DIR,
-    DEFAULT_PUA_MAP_PATH,
-    PUA_RANGE_START,
-)
-from thaipua.core.encoding import load_pua_map_dict
+from thaipua.core.constants import PUA_RANGE_START
 from thaipua.core.fonttools.alternates import GlyphSubstitution, find_glyph_substitutions
 from thaipua.core.fonttools.bounding_box import BoundingBox
 from thaipua.core.fonttools.composer import (
@@ -54,8 +48,13 @@ from thaipua.core.layout import (
     max_base_codepoint,
     save_layout_state,
 )
+from thaipua.core.paths import (
+    DEFAULT_LAYOUT_PATH,
+    DEFAULT_PROFILES_DIR,
+    DEFAULT_PUA_MAP_PATH,
+)
 from thaipua.core.profiles import resolve_settings_profile
-from thaipua.core.pua_map import save_pua_map
+from thaipua.core.pua_map import load_pua_map_dict, save_pua_map
 from thaipua.gui.glyph_pen import PathLike, render_glyph_path, render_placed_components
 
 logger = logging.getLogger(__name__)

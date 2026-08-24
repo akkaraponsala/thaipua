@@ -4,7 +4,6 @@ from thaipua.core.encoding import (
     PuaEncodingMap,
     load_decode_table,
     load_encoding_map,
-    load_pua_map_dict,
     normalize_sara_am,
 )
 from thaipua.core.file_codec import decode_files, encode_files
@@ -30,6 +29,7 @@ from thaipua.core.fonttools import (
     settings_to_dict,
 )
 from thaipua.core.profiles import ResolvedProfile, resolve_settings_profile
+from thaipua.core.pua_map import load_pua_map_dict
 from thaipua.core.string_table import (
     ParsedStringTable,
     StringEntry,

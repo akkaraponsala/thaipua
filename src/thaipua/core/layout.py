@@ -13,10 +13,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
+from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START, THAI_CONSONANT_CHARS
 from thaipua.core.fonttools.occupancy import PuaOccupant
 from thaipua.core.fonttools.ownership import SlotOwnership
-from thaipua.core.pua_map import THAI_CONSONANTS, THAI_SUFFIXES
+from thaipua.core.pua_map import THAI_SUFFIXES
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +31,14 @@ def cluster_ordinal(thai_key: str) -> int | None:
     if len(thai_key) < 1:
         return None
     consonant, suffix = thai_key[0], thai_key[1:]
-    if consonant not in THAI_CONSONANTS or suffix not in THAI_SUFFIXES:
+    if consonant not in THAI_CONSONANT_CHARS or suffix not in THAI_SUFFIXES:
         return None
-    return THAI_CONSONANTS.index(consonant) * len(THAI_SUFFIXES) + THAI_SUFFIXES.index(suffix)
+    return THAI_CONSONANT_CHARS.index(consonant) * len(THAI_SUFFIXES) + THAI_SUFFIXES.index(suffix)
 
 
 def key_at_ordinal(ordinal: int) -> str:
     """Return the Thai key sitting at `ordinal` in the fixed consonant-x-suffix order."""
-    consonant = THAI_CONSONANTS[ordinal // len(THAI_SUFFIXES)]
+    consonant = THAI_CONSONANT_CHARS[ordinal // len(THAI_SUFFIXES)]
     suffix = THAI_SUFFIXES[ordinal % len(THAI_SUFFIXES)]
     return f"{consonant}{suffix}"
 
@@ -51,7 +51,7 @@ def canonical_codepoint(thai_key: str, base: int) -> int | None:
 
 def cluster_count() -> int:
     """Return the total number of clusters in the fixed layout grid."""
-    return len(THAI_CONSONANTS) * len(THAI_SUFFIXES)
+    return len(THAI_CONSONANT_CHARS) * len(THAI_SUFFIXES)
 
 
 def canonical_tail_start(base: int) -> int:

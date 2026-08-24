@@ -11,7 +11,7 @@ from pathlib import Path
 import qdarktheme
 from PySide6.QtWidgets import QApplication
 
-from thaipua.core.constants import DEFAULT_CONFIG_PATH
+from thaipua.core.paths import DEFAULT_CONFIG_PATH
 
 logger = logging.getLogger(__name__)
 

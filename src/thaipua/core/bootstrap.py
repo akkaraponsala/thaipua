@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thaipua.core.constants import APP_DATA_DIR, PROFILES_DIR_NAME
+from thaipua.core.paths import APP_DATA_DIR, PROFILES_DIR_NAME
 
 
 def ensure_app_data_dirs(base_dir: Path | None = None) -> None:

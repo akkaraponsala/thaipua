@@ -19,13 +19,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from thaipua.core.constants import DEFAULT_PROFILES_DIR
 from thaipua.core.file_codec import decode_files, encode_files
 from thaipua.core.fonttools.map_validation import IssueSeverity, PuaMapIssue
 from thaipua.core.fonttools.ownership import SlotOwnership
 from thaipua.core.fonttools.settings import SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL, SUB_CONSONANT, SUB_TONE_MARK
 from thaipua.core.fonttools.specs import CompositeSpec
 from thaipua.core.layout import LayoutConflict
+from thaipua.core.paths import DEFAULT_PROFILES_DIR
 from thaipua.core.string_table import StringTableError
 from thaipua.gui import icons, theme
 from thaipua.gui.font_service import FontService

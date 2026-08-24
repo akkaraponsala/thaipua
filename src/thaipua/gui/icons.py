@@ -9,7 +9,7 @@ from PySide6.QtCore import QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QIcon, QIconEngine, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
-from thaipua.core.constants import ASSETS_DIR
+from thaipua.core.paths import ASSETS_DIR
 from thaipua.gui import theme
 
 IconName = Literal[

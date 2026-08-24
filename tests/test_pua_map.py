@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thaipua.core.encoding import load_pua_map_dict
-from thaipua.core.pua_map import next_free_codepoint, save_pua_map
+from thaipua.core.pua_map import load_pua_map_dict, next_free_codepoint, save_pua_map
 
 
 def test_next_free_codepoint_skips_used_chars() -> None:
