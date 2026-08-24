@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from thaipua.core.constants import DEFAULT_PROFILE_FILE_NAME, DEFAULT_PROFILES_DIR
-from thaipua.core.fonttools.settings import PlacementSettings, default_placement_settings, load_placement_settings
+from thaipua.core.fonttools.settings import (
+    PlacementSettings,
+    default_placement_settings,
+    load_placement_settings,
+    settings_to_dict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +44,19 @@ def resolve_settings_profile(font_path: str | Path, *, profiles_dir: str | Path 
         return ResolvedProfile(settings=load_placement_settings(candidate), source=candidate)
     logger.info("No profile found under %s for font '%s'; using in-source defaults", base_dir, stem)
     return ResolvedProfile(settings=default_placement_settings(), source=None)
+
+
+def seed_default_profile(profiles_dir: str | Path | None = None) -> Path:
+    """Write the starter `default.json` profile when missing, returning its path."""
+    base_dir = Path(profiles_dir) if profiles_dir is not None else Path(DEFAULT_PROFILES_DIR)
+    target = base_dir / DEFAULT_PROFILE_FILE_NAME
+    if target.is_file():
+        return target
+    payload = settings_to_dict(default_placement_settings())
+    base_dir.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=4), encoding="utf-8")
+    logger.info("Seeded default profile at %s", target)
+    return target
 
 
 def _extract_family(stem: str) -> str:

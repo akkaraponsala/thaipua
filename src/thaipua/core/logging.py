@@ -8,6 +8,7 @@ from pathlib import Path
 
 from thaipua.core.constants import APP_DATA_DIR
 
+LOG_DIR_NAME: str = "logs"
 LOG_FILE_NAME: str = "thaipua.log"
 LOG_FORMAT: str = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 FILE_MAX_BYTES: int = 1_000_000
@@ -49,5 +50,6 @@ def setup_logging(
 
 
 def log_file_path(base_dir: Path | None = None) -> Path:
-    """Return the log file path under `base_dir` (or `APP_DATA_DIR`)."""
-    return (Path(base_dir) if base_dir is not None else APP_DATA_DIR) / LOG_FILE_NAME
+    """Return the log file path under `<base_dir>/logs` (or `APP_DATA_DIR/logs`)."""
+    root = Path(base_dir) if base_dir is not None else APP_DATA_DIR
+    return root / LOG_DIR_NAME / LOG_FILE_NAME

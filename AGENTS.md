@@ -21,10 +21,11 @@ thaipua/
 │   │   │   ├── alternates.py         # GSUB discovery: find_glyph_substitutions
 │   │   │   └── bounding_box.py       # BoundingBoxCache
 │   │   ├── constants.py              # APP_DATA_DIR / ASSETS_DIR, PUA_RANGE_START/END (U+E000..U+F8FF), SARA_AM_REPLACEMENTS
+│   │   ├── bootstrap.py              # ensure_app_data_dirs (mkdir-only, no domain imports)
 │   │   ├── encoding.py               # Thai↔PUA encode/decode, normalize_sara_am, load_pua_map_dict
 │   │   ├── pua_map.py                # Cluster constants, map-file persistence, free-slot search
 │   │   ├── layout.py                 # Deterministic PUA layout: canonical base + relocations + overrides + conflict detection
-│   │   ├── profiles.py               # Tiered profile resolution (resolve_settings_profile)
+│   │   ├── profiles.py               # Tiered profile resolution (resolve_settings_profile) + seed_default_profile
 │   │   ├── string_table.py           # Bethesda .STRINGS/.DLSTRINGS/.ILSTRINGS codec (StringTableError)
 │   │   ├── text_encoding.py          # detect_text_encoding (BOM sniffing, utf-8 → cp1252 fallback)
 │   │   └── file_codec.py             # encode_files / decode_files pipeline over text + string tables
@@ -37,7 +38,7 @@ thaipua/
 │   │   └── widgets/                  # controls_pane, glyph_grid_pane, preview_pane, top_toolbar, status_footer, dialogs, pua_mapping_dialog, occupancy_dialog
 │   └── app.py + __main__.py          # Entry: uv run python -m thaipua → app.main
 ├── assets/fonts/Sarabun-Regular.ttf  # Sample font for tests
-├── layout.json + pua_mapping.json + profiles/ + settings.json  # Runtime data (repo root in dev)
+├── data/                               # Runtime data (repo root in dev): layout.json + pua_mapping.json + profiles/ + config.json + logs/
 ├── pyproject.toml                    # src layout, ruff/mypy/pytest config
 └── pysidedeploy.spec                 # Nuitka bundle config
 ```
@@ -104,14 +105,15 @@ uv run python -m thaipua      # launch GUI
 uv run pyside6-deploy -c pysidedeploy.spec  # bundle → build/thaipua.dist/
 ```
 
-## Runtime Data (dev writes to repo root)
+## Runtime Data (dev writes to `data/` at repo root)
 
-`constants._runtime_root()` returns the repo root unless `is_standalone_build()` (Nuitka sets `__compiled__`, not just `sys.frozen`), then the exe dir. `ensure_app_data_dirs()` creates `profiles/` and seeds `default.json`; `app.main` calls it before opening the GUI. On load the app creates/mutates:
+`constants.APP_DATA_DIR` = `_runtime_root()/data`; `_runtime_root()` returns the repo root unless `is_standalone_build()` (Nuitka sets `__compiled__`, not just `sys.frozen`), then the exe dir. `ensure_app_data_dirs()` (`core/bootstrap.py`, mkdir-only) creates the tree; `seed_default_profile()` (`core/profiles.py`) seeds `default.json` when missing; `app.main` calls both before opening the GUI. On load the app creates/mutates under `data/`:
 
 - `layout.json` — `{base, relocations, overrides}`; the authoritative layout state (auto-bootstrapped to the canonical default)
 - `pua_mapping.json` — materialized cache of the effective map, regenerated on every layout change
 - `profiles/default.json` (seeded) and `profiles/<stem>.json` (written on Save Font)
-- `settings.json` (theme)
+- `config.json` (theme; `DEFAULT_CONFIG_PATH`)
+- `logs/thaipua.log` (+ `.1`–`.5` rotating backups)
 
 Don't commit these unless intentional. Tests isolate them via explicit path params (`set_layout_path`, `base_dir`, ...) → `tmp_path`.
 
@@ -139,8 +141,7 @@ Don't commit these unless intentional. Tests isolate them via explicit path para
 ## Gotchas / Non-obvious Behaviors
 
 - **The layout is stable by determinism, not by immutability:** assignments never drift silently, but `layout.json`/`pua_mapping.json` are regenerable state — user intent lives in relocations and overrides, not in the cache file.
-- **Consonant protrusion:** only `ฬ` is `"ascender"` in `CONSONANT_PROTRUSION`; every other consonant (including down-protruding descenders `ญ ฐ ฎ ฏ`) falls back to generic tone-within-vowel-family context canonicalization. Don't add descender entries without understanding that logic.
-- **`pysidedeploy.spec`'s `python_path` must stay empty** so `pyside6-deploy` uses the interpreter running the tool (the project venv via `uv run`, both local and CI); a hardcoded absolute path breaks other machines. Run it from the repo root — spec paths resolve relative to cwd.
+- **Consonant protrusion:** only `ฬ` is `"ascender"` in `CONSONANT_PROTRUSION`; every other consonant (including descender-protruding `ญ ฐ ฎ ฏ`) falls back to generic tone-within-vowel-family context canonicalization. Don't add descender entries without understanding that logic.
 - Prefer `InstallResult.status` over log scraping when reacting to installs; every install outcome, including skips, has an explicit status.
 
 ## Commit & Pull Request Guidelines

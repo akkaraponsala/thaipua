@@ -33,7 +33,7 @@ def _clean_root_logger() -> Iterator[None]:
 @pytest.mark.usefixtures("_clean_root_logger")
 def test_setup_logging_writes_file_and_respects_levels(tmp_path: Path) -> None:
     log_path = setup_logging(tmp_path)
-    assert log_path == tmp_path / "thaipua.log"
+    assert log_path == tmp_path / "logs" / "thaipua.log"
 
     logging.getLogger("thaipua.test").info("visible message")
     for handler in logging.getLogger().handlers:
@@ -48,7 +48,7 @@ def test_setup_logging_is_idempotent(tmp_path: Path) -> None:
     first = setup_logging(tmp_path)
     handler_count = len(logging.getLogger().handlers)
     second = setup_logging(tmp_path / "elsewhere")
-    assert second == tmp_path / "elsewhere" / "thaipua.log"
+    assert second == tmp_path / "elsewhere" / "logs" / "thaipua.log"
     assert not second.exists()
     assert len(logging.getLogger().handlers) == handler_count
     assert first.is_file()
@@ -57,4 +57,4 @@ def test_setup_logging_is_idempotent(tmp_path: Path) -> None:
 def test_log_file_path_defaults_to_app_data_dir() -> None:
     from thaipua.core.constants import APP_DATA_DIR
 
-    assert log_file_path() == APP_DATA_DIR / "thaipua.log"
+    assert log_file_path() == APP_DATA_DIR / "logs" / "thaipua.log"

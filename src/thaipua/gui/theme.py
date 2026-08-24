@@ -11,7 +11,7 @@ from pathlib import Path
 import qdarktheme
 from PySide6.QtWidgets import QApplication
 
-from thaipua.core.constants import DEFAULT_SETTINGS_PATH
+from thaipua.core.constants import DEFAULT_CONFIG_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -193,17 +193,17 @@ def _theme_mode_from_value(value: str) -> ThemeMode:
 
 
 def load_theme_mode(path: str | Path | None = None) -> ThemeMode:
-    """Load the persisted theme mode from `settings.json`, defaulting on any failure."""
-    settings_path = Path(path) if path is not None else Path(DEFAULT_SETTINGS_PATH)
-    if not settings_path.is_file():
+    """Load the persisted theme mode from `config.json`, defaulting on any failure."""
+    config_path = Path(path) if path is not None else Path(DEFAULT_CONFIG_PATH)
+    if not config_path.is_file():
         return DEFAULT_THEME_MODE
     try:
-        raw = json.loads(settings_path.read_text(encoding="utf-8"))
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        logger.warning("Could not read settings at %s; using %s", settings_path, DEFAULT_THEME_MODE.value)
+        logger.warning("Could not read config at %s; using %s", config_path, DEFAULT_THEME_MODE.value)
         return DEFAULT_THEME_MODE
     if not isinstance(raw, dict):
-        logger.warning("Settings at %s is not a JSON object; using %s", settings_path, DEFAULT_THEME_MODE.value)
+        logger.warning("Config at %s is not a JSON object; using %s", config_path, DEFAULT_THEME_MODE.value)
         return DEFAULT_THEME_MODE
     theme_value = raw.get("theme")
     if not isinstance(theme_value, str):
@@ -212,16 +212,16 @@ def load_theme_mode(path: str | Path | None = None) -> ThemeMode:
 
 
 def save_theme_mode(mode: ThemeMode, path: str | Path | None = None) -> None:
-    """Persist `mode` to `settings.json`, preserving sibling keys."""
-    settings_path = Path(path) if path is not None else Path(DEFAULT_SETTINGS_PATH)
+    """Persist `mode` to `config.json`, preserving sibling keys."""
+    config_path = Path(path) if path is not None else Path(DEFAULT_CONFIG_PATH)
     data = {}
-    if settings_path.is_file():
+    if config_path.is_file():
         try:
-            existing = json.loads(settings_path.read_text(encoding="utf-8"))
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
             if isinstance(existing, dict):
                 data = existing
         except (OSError, json.JSONDecodeError):
-            logger.warning("Could not read existing settings at %s; rewriting", settings_path)
+            logger.warning("Could not read existing config at %s; rewriting", config_path)
     data["theme"] = mode.value
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    settings_path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
