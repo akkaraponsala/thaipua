@@ -34,8 +34,8 @@ from thaipua.core.string_table import (
     ParsedStringTable,
     StringEntry,
     StringTableError,
-    parse_strings_file,
-    write_strings_file,
+    parse_string_table,
+    write_string_table,
 )
 from thaipua.core.text_encoding import detect_text_encoding
 
@@ -69,9 +69,9 @@ __all__ = [
     "load_placement_settings",
     "load_pua_map_dict",
     "normalize_sara_am",
-    "parse_strings_file",
+    "parse_string_table",
     "resolve_settings_profile",
     "save_placement_settings",
     "settings_to_dict",
-    "write_strings_file",
+    "write_string_table",
 ]

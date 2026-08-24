@@ -30,11 +30,11 @@ from thaipua.core import (
     load_placement_settings,
     load_pua_map_dict,
     normalize_sara_am,
-    parse_strings_file,
+    parse_string_table,
     resolve_settings_profile,
     save_placement_settings,
     settings_to_dict,
-    write_strings_file,
+    write_string_table,
 )
 
 __version__ = "0.1.3"
@@ -69,9 +69,9 @@ __all__ = [
     "load_placement_settings",
     "load_pua_map_dict",
     "normalize_sara_am",
-    "parse_strings_file",
+    "parse_string_table",
     "resolve_settings_profile",
     "save_placement_settings",
     "settings_to_dict",
-    "write_strings_file",
+    "write_string_table",
 ]

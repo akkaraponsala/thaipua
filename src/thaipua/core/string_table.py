@@ -100,7 +100,7 @@ def _extract_raw_bytes(data_block: bytes, string_offset: int, resolved_type: Fil
     return data_block[str_start:str_end]
 
 
-def parse_strings_file(
+def parse_string_table(
     file_path: str | Path, *, file_type: FileType | None = None, fallback_encoding: str = "cp1252"
 ) -> ParsedStringTable:
     """Parse a string table into ordered entries, decoding UTF-8 with a legacy fallback.
@@ -143,7 +143,7 @@ def parse_strings_file(
     return ParsedStringTable(entries=entries, encoding=file_encoding)
 
 
-def write_strings_file(
+def write_string_table(
     entries: list[StringEntry], file_path: str | Path, *, file_type: FileType | None = None, encoding: str = "utf-8"
 ) -> Path:
     """Write entries as a string table, deduplicating identical strings and recomputing offsets.
