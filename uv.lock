@@ -729,7 +729,7 @@ wheels = [
 
 [[package]]
 name = "thaipua"
-version = "0.1.3"
+version = "0.1.4"
 source = { editable = "." }
 dependencies = [
     { name = "fonttools" },
