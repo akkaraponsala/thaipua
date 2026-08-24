@@ -148,3 +148,11 @@ def test_parse_rejects_garbage() -> None:
 
 def test_parse_returns_out_of_range_hex_unchanged_for_validator_to_flag() -> None:
     assert parse_codepoint("E0A31") == chr(0xE0A31)
+
+
+def test_parse_rejects_unencodable_codepoints() -> None:
+    assert parse_codepoint("D800") is None
+    assert parse_codepoint("dfff") is None
+    assert parse_codepoint("110000") is None
+    assert parse_codepoint("-2") is None
+    assert parse_codepoint(chr(0xD800)) is None

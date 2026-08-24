@@ -97,17 +97,21 @@ def validate_pua_map(
 def parse_codepoint(text: str) -> str | None:
     """Interpret editor input as a single-character value, accepting literal characters, bare hex, or `U+XXXX`.
 
-    Out-of-range codepoints pass through; the validator flags them instead.
+    Codepoints that cannot survive a UTF-8 JSON round-trip (surrogates, beyond plane 16, negative)
+    are rejected; other out-of-PUA-range values pass through for the validator to flag.
     """
     stripped = text.strip()
     if not stripped:
         return None
     if len(stripped) == 1:
-        return stripped
-    hex_part = stripped.lower().removeprefix("u+").removeprefix("0x")
-    try:
-        codepoint = int(hex_part, 16)
-    except ValueError:
+        codepoint = ord(stripped)
+    else:
+        hex_part = stripped.lower().removeprefix("u+").removeprefix("0x")
+        try:
+            codepoint = int(hex_part, 16)
+        except ValueError:
+            return None
+    if not 0 <= codepoint <= 0x10FFFF or 0xD800 <= codepoint <= 0xDFFF:
         return None
     return chr(codepoint)
 

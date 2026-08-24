@@ -335,7 +335,11 @@ class PuaMappingDialog(QDialog):
         return self._view
 
     def _build_button_row(self) -> QHBoxLayout:
-        """Build Jump-to-Next-Issue, Next-Free, and Cancel/Apply buttons."""
+        """Build Jump-to-Next-Issue, Next-Free, and Cancel/Apply buttons.
+
+        Apply stays enabled regardless of errors so work-in-progress edits can be
+        checkpointed; Save Font carries the authoritative error gate.
+        """
         row = QHBoxLayout()
         jump_btn = QPushButton("Jump to Next Issue", self)
         jump_btn.clicked.connect(self._jump_to_next_issue)
@@ -355,9 +359,10 @@ class PuaMappingDialog(QDialog):
         return row
 
     def _update_summary(self, errors: int, warnings: int, edited: int) -> None:
-        """Refresh the summary line and gate Apply on the current totals."""
-        self._apply_btn.setEnabled(errors == 0)
-        self._apply_btn.setToolTip("Fix all mapping errors to enable Apply" if errors else "")
+        """Refresh the summary line and the Apply tooltip; Apply itself stays enabled."""
+        self._apply_btn.setToolTip(
+            f"{errors} error(s) will be applied as-is; Save Font stays blocked until fixed" if errors else ""
+        )
         total = self._model.rowCount()
         parts = [f"{total} entries"]
         parts.append(f"{errors} error(s)" if errors == 1 else f"{errors} errors")
