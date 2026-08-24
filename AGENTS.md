@@ -153,4 +153,4 @@ Don't commit these unless intentional. Tests isolate them via explicit path para
 
 ## CI Mirrors Local Commands
 
-`.github/workflows/release.yml` builds the Windows bundle on `v*.*.*` tags: Python 3.12, `uv sync`, `uv run pyside6-deploy -c pysidedeploy.spec`, zips `build/thaipua.dist/*` → `ThaiPUA-Windows.zip`, attaches to a GitHub Release. There's no lint/test CI yet — run those locally.
+`.github/workflows/ci.yml` runs `ruff check` + `ruff format --check`, `mypy`, and `pytest` on pushes to `main` and PRs. `.github/workflows/release.yml` builds the Windows bundle on `v*.*.*` tags: Python 3.12, `uv sync`, `uv run pyside6-deploy -c pysidedeploy.spec`, zips `build/thaipua.dist/*` → `ThaiPUA-Windows.zip`, attaches to a GitHub Release.
