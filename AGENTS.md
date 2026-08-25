@@ -35,7 +35,7 @@ thaipua/
 │   │   ├── glyph_pen.py              # PathLike recorder, render_placed_components — PySide6-free
 │   │   ├── main_window.py            # Single mutator of AppState, owns QTimer debounce, wiring of all panes
 │   │   ├── theme.py / icons.py       # PySide6 allowed
-│   │   └── widgets/                  # controls_pane, glyph_grid_pane, preview_pane, top_toolbar, status_footer, dialogs, pua_mapping_dialog, occupancy_dialog
+│   │   └── widgets/                  # controls_pane, glyph_grid_pane, preview_pane, top_toolbar, status_footer, dialogs, pua_mapping_dialog, occupancy_dialog, anchored_tooltip (app-wide widget-anchored tooltips)
 │   └── app.py + __main__.py          # Entry: uv run python -m thaipua → app.main
 ├── assets/fonts/Sarabun-Regular.ttf  # Sample font for tests
 ├── data/                             # Runtime data (repo root in dev): layout.json + pua_mapping.json + profiles/ + config.json + logs/

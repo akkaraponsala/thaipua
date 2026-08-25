@@ -45,6 +45,8 @@ class Palette:
     ACCENT_HOVER: str
     BORDER: str
     BORDER_FOCUS: str
+    BG_TOOLTIP: str
+    BORDER_TOOLTIP: str
     ICON_FG: str
     GLYPH_FILL: str
     GLYPH_PEN: str
@@ -65,6 +67,8 @@ DARK_PALETTE: Palette = Palette(
     ACCENT_HOVER="#A1C4FA",
     BORDER="#3F4042",
     BORDER_FOCUS="#8AB4F7",
+    BG_TOOLTIP="#2B2D31",
+    BORDER_TOOLTIP="#54585E",
     ICON_FG="#E1E5E9",
     GLYPH_FILL="#FFFFFF",
     GLYPH_PEN="#F0F0F0",
@@ -84,6 +88,8 @@ LIGHT_PALETTE: Palette = Palette(
     ACCENT_HOVER="#1765CC",
     BORDER="#DADCE0",
     BORDER_FOCUS="#1A73E8",
+    BG_TOOLTIP="#FFFFFF",
+    BORDER_TOOLTIP="#A9ADB3",
     ICON_FG="#494D53",
     GLYPH_FILL="#202124",
     GLYPH_PEN="#3F4042",

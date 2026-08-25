@@ -14,6 +14,7 @@ from thaipua.core.bootstrap import ensure_app_data_dirs
 from thaipua.core.logging import setup_logging
 from thaipua.core.paths import ASSETS_DIR
 from thaipua.gui.main_window import MainWindow
+from thaipua.gui.widgets.anchored_tooltip import install_anchored_tooltips
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     logger.info("Starting thaipua")
     app = QApplication(list(argv) if argv is not None else sys.argv)
     _set_window_icon(app)
+    install_anchored_tooltips(app)
     window = MainWindow()
     window.show()
     return int(app.exec())

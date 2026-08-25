@@ -81,6 +81,7 @@ extend-ignore-names = [
     "columnCount",
     "cubicTo",
     "enterEvent",
+    "eventFilter",
     "filterAcceptsRow",
     "headerData",
     "leaveEvent",
