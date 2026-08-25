@@ -126,3 +126,23 @@ def test_missing_consonant_is_reported_not_raised(generator: ThaiPuaFontGenerato
     assert result.status is InstallStatus.SKIPPED_MISSING_CONSONANT
     assert result.glyph_name is None
     assert pua_code not in generator.font.getBestCmap()
+
+
+def test_global_mark_offset_shifts_composed_tone_component(generator: ThaiPuaFontGenerator) -> None:
+    from thaipua.core.fonttools.settings import ROLE_TONE_MARK, Offset, PlacementSettings
+
+    tone_mai_ek = 0x0E48
+    baseline = generator.compose_components(KO_KAI, None, None, tone_mai_ek)
+    assert baseline is not None
+    assert len(baseline) == 2
+    if 0x0E48 not in generator._cmap:
+        pytest.skip("sample font has no mai-ek glyph")
+
+    settings = PlacementSettings(marks={ROLE_TONE_MARK: {tone_mai_ek: Offset(-40, -5)}})
+    shifted = generator.compose_components(KO_KAI, None, None, tone_mai_ek, settings=settings)
+
+    assert shifted is not None
+    assert [p.glyph_name for p in shifted] == [p.glyph_name for p in baseline]
+    base_tx, base_ty = baseline[1].transform[4], baseline[1].transform[5]
+    new_tx, new_ty = shifted[1].transform[4], shifted[1].transform[5]
+    assert (new_tx, new_ty) == (base_tx - 40, base_ty - 5)

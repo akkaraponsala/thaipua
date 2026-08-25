@@ -75,7 +75,7 @@ thaipua/
 
 ### Settings & Profiles
 
-Settings JSON shape: `{version, metadata, consonants: {U+XXXX: {base_offsets, mark_offsets, combo_offsets, snap_configs, glyph_substitutions}}}`. All codepoint keys use canonical `U+XXXX` notation; combo keys are ascending `U+XXXX+U+YYYY` (in-memory they normalize to char keys).
+Settings JSON shape: `{version, metadata, marks: {tone_marks/above_vowels/below_vowels: {U+XXXX: {x,y}}}, consonants: {U+XXXX: {base_offsets, mark_offsets, combo_offsets, snap_configs, glyph_substitutions}}}`. All codepoint keys use canonical `U+XXXX` notation; combo keys are ascending `U+XXXX+U+YYYY` (in-memory they normalize to char keys).
 
 | Tier | Role |
 |------|------|
@@ -85,7 +85,7 @@ Settings JSON shape: `{version, metadata, consonants: {U+XXXX: {base_offsets, ma
 | `snap_configs` | `tone_mark_to_above_vowel`, `above_vowel_to_consonant`, `below_vowel_to_consonant`, each `{enabled, gap}` |
 | `glyph_substitutions` | Per-codepoint `[{replacement, conditions}]`; conditions are mark roles, AND semantics |
 
-- Offset resolution (`ConsonantSettings.offset_for`): single marks read `mark_offsets[role][mark]`, multi-mark combos read `combo_offsets[combo][role]`; both add `(base_offsets[base_role or role] or 0)`. A tone mark stacked on an above vowel passes `base_role=ROLE_TONE_MARK_ON_ABOVE_VOWEL`.
+- Offset resolution (`PlacementSettings.mark_offset_for`): single marks read `mark_offsets[role][mark]`, multi-mark combos read `combo_offsets[combo][role]`; both stack with the font-global `marks[role][mark]` tier (per-mark, consonant-independent — fixes font-wide mark-origin defects once) and `(base_offsets[base_role or role] or 0)`. A tone mark stacked on an above vowel passes `base_role=ROLE_TONE_MARK_ON_ABOVE_VOWEL`.
 - Profiles are **user-driven**: opening a font starts from in-code `default_placement_settings()`; the toolbar's Load/Save Profile (file dialogs via `FontService.load_profile`/`save_profile`) and the Controls pane's Reset Defaults are the sole profile IO. `default_profile_path()` suggests `<profiles_dir>/<stem>.json`.
 - Substitution matching canonicalizes both sides via `settings.context_canonicalizer(codepoint)` (category-dependent family merging). Most specific rule (longest canonicalized conditions) wins; ties broken by list order.
 - `state.py` helpers (`current_*` / `apply_offset` / `apply_base_offset` / `apply_glyph_substitution` / `apply_snap`) mutate `PlacementSettings` in place, clearing zero/disabled entries.

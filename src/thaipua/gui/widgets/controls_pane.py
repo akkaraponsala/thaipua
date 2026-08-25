@@ -1,4 +1,4 @@
-"""Right pane exposing mark offsets, base offsets, glyph substitutions, and snap configs."""
+"""Right pane exposing global/per-glyph mark offsets, base offsets, glyph substitutions, and snap configs."""
 
 from __future__ import annotations
 
@@ -28,13 +28,16 @@ from thaipua.core.fonttools.settings import (
     GLYPH_SUBSTITUTION_ROLES,
     ROLE_ABOVE_VOWEL,
     ROLE_BELOW_VOWEL,
+    ROLE_TO_MARK_CATEGORY,
     ROLE_TONE_MARK,
     ROLE_TONE_MARK_ON_ABOVE_VOWEL,
+    ROLES,
     SNAPS,
     SUB_ABOVE_VOWEL,
     SUB_BELOW_VOWEL,
     SUB_CONSONANT,
     SUB_TONE_MARK,
+    Offset,
     PlacementSettings,
 )
 from thaipua.gui import icons
@@ -44,6 +47,7 @@ from thaipua.gui.state import (
     SNAP_LABELS,
     MarkCategory,
     current_base_offset,
+    current_global_mark_offset,
     current_glyph_substitution,
     current_snap,
     glyph_substitution_candidates,
@@ -61,6 +65,7 @@ SNAP_GAP_MIN = -1000
 SNAP_GAP_MAX = 1000
 SNAP_GAP_DEFAULT = 0
 NO_OVERRIDE = "(no override)"
+GLOBAL_MARK_PLACEHOLDER = "(select mark)"
 _CATEGORY_ITER: tuple[MarkCategory, ...] = (MarkCategory.TONE_MARK, MarkCategory.ABOVE_VOWEL, MarkCategory.BELOW_VOWEL)
 _SUB_ROLE_LABELS: dict[str, str] = {
     SUB_CONSONANT: "Consonant",
@@ -81,6 +86,7 @@ class ControlsPane(QWidget):
 
     offset_changed = Signal(int, int)
     base_offset_changed = Signal(str, int, int)
+    global_mark_offset_changed = Signal(str, int, int, int)
     glyph_substitution_changed = Signal(str, str)
     snap_changed = Signal(str, bool, int)
     category_changed = Signal(object)
@@ -89,6 +95,8 @@ class ControlsPane(QWidget):
     _snap_checks: dict[str, QCheckBox]
     _snap_gaps: dict[str, QSpinBox]
     _base_offset_spins: dict[str, tuple[QSpinBox, QSpinBox]]
+    _global_mark_combos: dict[str, QComboBox]
+    _global_mark_spins: dict[str, tuple[QSpinBox, QSpinBox]]
     _radios: dict[MarkCategory, QRadioButton]
     _radio_group: QButtonGroup
     _axis_icons: list[tuple[IconName, QLabel]]
@@ -112,6 +120,10 @@ class ControlsPane(QWidget):
         self._snap_checks = {}
         self._snap_gaps = {}
         self._base_offset_spins = {}
+        self._global_mark_combos = {}
+        self._global_mark_spins = {}
+        self._font_loaded = False
+        self._settings: PlacementSettings | None = None
         self._consonant_active = False
         self._enabled = False
         self._enabled_categories = set(_CATEGORY_ITER)
@@ -129,6 +141,7 @@ class ControlsPane(QWidget):
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(8)
         container_layout.addWidget(self._build_offset_group())
+        container_layout.addWidget(self._build_global_mark_offsets_group())
         container_layout.addWidget(self._build_base_offsets_group())
         container_layout.addWidget(self._build_glyph_substitutions_group())
         container_layout.addWidget(self._build_snap_configs_group())
@@ -256,6 +269,103 @@ class ControlsPane(QWidget):
         x_spin, y_spin = self._base_offset_spins[role]
         self.base_offset_changed.emit(role, x_spin.value(), y_spin.value())
 
+    def _build_global_mark_offsets_group(self) -> QGroupBox:
+        """Build the *Mark Offsets (Global)* group: one mark selector plus X/Y spins per role."""
+        group = QGroupBox("Mark Offsets (Global)", self)
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(10, 16, 10, 10)
+        layout.setSpacing(6)
+        for role in ROLES:
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            role_label = QLabel(_DEFAULT_ROLE_LABELS[role], self)
+            role_label.setMinimumWidth(90)
+            combo = QComboBox(self)
+            combo.addItem(GLOBAL_MARK_PLACEHOLDER, None)
+            for cp in sorted(ROLE_TO_MARK_CATEGORY[role]):
+                combo.addItem(f"{chr(cp)}  U+{cp:04X}", cp)
+            x_spin = QSpinBox(self)
+            y_spin = QSpinBox(self)
+            for spin in [x_spin, y_spin]:
+                spin.setRange(OFFSET_MIN, OFFSET_MAX)
+                spin.setValue(OFFSET_DEFAULT)
+                spin.setMinimumWidth(70)
+                spin.setEnabled(False)
+            row.addWidget(role_label)
+            row.addWidget(combo, 1)
+            row.addWidget(self._axis_icon_label("axis-x"))
+            row.addWidget(x_spin)
+            row.addWidget(self._axis_icon_label("axis-y"))
+            row.addWidget(y_spin)
+            layout.addLayout(row)
+            self._global_mark_combos[role] = combo
+            self._global_mark_spins[role] = (x_spin, y_spin)
+            combo.currentIndexChanged.connect(lambda _i, r=role: self._on_global_mark_selected(r))
+            x_spin.valueChanged.connect(lambda _v, r=role: self._on_global_mark_spin(r))
+            y_spin.valueChanged.connect(lambda _v, r=role: self._on_global_mark_spin(r))
+        return group
+
+    def _on_global_mark_selected(self, role: str) -> None:
+        """Load the newly selected mark's stored offset into its spins without emitting."""
+        mark_uni = self._global_mark_combos[role].currentData()
+        has_mark = mark_uni is not None
+        settings = self._settings if self._settings is not None else PlacementSettings()
+        off = current_global_mark_offset(role, mark_uni, settings) if has_mark else Offset()
+        x_spin, y_spin = self._global_mark_spins[role]
+        for spin in [x_spin, y_spin]:
+            spin.blockSignals(True)
+        try:
+            x_spin.setValue(off.x)
+            y_spin.setValue(off.y)
+        finally:
+            for spin in [x_spin, y_spin]:
+                spin.blockSignals(False)
+            for spin in [x_spin, y_spin]:
+                spin.setEnabled(has_mark and self._font_loaded)
+
+    def _on_global_mark_spin(self, role: str) -> None:
+        """Emit the live `(mark_uni, x, y)` global offset for `role`'s selected mark."""
+        mark_uni = self._global_mark_combos[role].currentData()
+        if mark_uni is None:
+            return
+        x_spin, y_spin = self._global_mark_spins[role]
+        self.global_mark_offset_changed.emit(role, mark_uni, x_spin.value(), y_spin.value())
+
+    def load_global_marks(self, settings: PlacementSettings) -> None:
+        """Refresh the global mark spins from `settings` without emitting; cache it for selector switches."""
+        self._settings = settings
+        for role, (x_spin, y_spin) in self._global_mark_spins.items():
+            mark_uni = self._global_mark_combos[role].currentData()
+            if mark_uni is None:
+                continue
+            off = current_global_mark_offset(role, mark_uni, settings)
+            x_spin.blockSignals(True)
+            y_spin.blockSignals(True)
+            try:
+                x_spin.setValue(off.x)
+                y_spin.setValue(off.y)
+            finally:
+                x_spin.blockSignals(False)
+                y_spin.blockSignals(False)
+
+    def clear_global_marks(self) -> None:
+        """Reset the global mark selectors and spins, disabling them."""
+        self._settings = None
+        for role, combo in self._global_mark_combos.items():
+            x_spin, y_spin = self._global_mark_spins[role]
+            widgets: list[QComboBox | QSpinBox] = [combo, x_spin, y_spin]
+            for widget in widgets:
+                widget.blockSignals(True)
+            try:
+                combo.setCurrentIndex(0)
+                x_spin.setValue(OFFSET_DEFAULT)
+                y_spin.setValue(OFFSET_DEFAULT)
+            finally:
+                for widget in widgets:
+                    widget.blockSignals(False)
+                for spin in [x_spin, y_spin]:
+                    spin.setEnabled(False)
+
     def _build_glyph_substitutions_group(self) -> QGroupBox:
         """Build the Glyph Substitutions group: one read-only combo per substitution role."""
         group = QGroupBox("Glyph Substitutions", self)
@@ -324,6 +434,11 @@ class ControlsPane(QWidget):
     def set_font_loaded(self, loaded: bool) -> None:
         """Toggle the pane-global actions that require a loaded font."""
         self._reset_btn.setEnabled(loaded)
+        self._font_loaded = loaded
+        for role in ROLES:
+            has_mark = self._global_mark_combos[role].currentData() is not None
+            for spin in self._global_mark_spins[role]:
+                spin.setEnabled(loaded and has_mark)
 
     def set_enabled(self, enabled: bool, categories: frozenset[MarkCategory] | None = None) -> None:
         """Toggle the mark-offset controls, restricting radios to the enabled categories.
@@ -387,6 +502,7 @@ class ControlsPane(QWidget):
 
         A stored substitution not in the catalog is added to the combo so it round-trips.
         """
+        self.load_global_marks(settings)
         for role, (x_spin, y_spin) in self._base_offset_spins.items():
             x_spin.blockSignals(True)
             y_spin.blockSignals(True)
@@ -500,6 +616,7 @@ class ControlsPane(QWidget):
     def clear_consonant_settings(self) -> None:
         """Reset the per-consonant groups and disable them."""
         self.set_consonant_enabled(False)
+        self.clear_global_marks()
         for x_spin, y_spin in self._base_offset_spins.values():
             x_spin.blockSignals(True)
             y_spin.blockSignals(True)

@@ -189,6 +189,8 @@ class ThaiPuaFontGenerator:
         self,
         components: list[ComponentPlacement],
         *,
+        effective: PlacementSettings,
+        cons_uni: int,
         cons_settings: ConsonantSettings,
         cons_advance: int,
         cons_bbox: BoundingBox | None,
@@ -200,7 +202,7 @@ class ThaiPuaFontGenerator:
         snap_cfg = cons_settings.snap_for(SNAP_BELOW_TO_CONS)
         do_snap = snap_cfg.enabled if snap_cfg is not None else False
         gap = snap_cfg.gap if snap_cfg is not None else 0
-        offset = cons_settings.offset_for(ROLE_BELOW_VOWEL, mark_uni=below_uni, combo_key=combo_key)
+        offset = effective.mark_offset_for(cons_uni, ROLE_BELOW_VOWEL, mark_uni=below_uni, combo_key=combo_key)
         dx = cons_advance + offset.x
         if do_snap:
             vowel_box = self.bbox.get_bounding_box(vowel_name)
@@ -223,6 +225,8 @@ class ThaiPuaFontGenerator:
         self,
         components: list[ComponentPlacement],
         *,
+        effective: PlacementSettings,
+        cons_uni: int,
         cons_settings: ConsonantSettings,
         cons_advance: int,
         cons_bbox: BoundingBox | None,
@@ -234,7 +238,7 @@ class ThaiPuaFontGenerator:
         snap_cfg = cons_settings.snap_for(SNAP_ABOVE_TO_CONS)
         do_snap = snap_cfg.enabled if snap_cfg is not None else False
         gap = snap_cfg.gap if snap_cfg is not None else 0
-        offset = cons_settings.offset_for(ROLE_ABOVE_VOWEL, mark_uni=above_uni, combo_key=combo_key)
+        offset = effective.mark_offset_for(cons_uni, ROLE_ABOVE_VOWEL, mark_uni=above_uni, combo_key=combo_key)
         dx = cons_advance + offset.x
         vowel_box = self.bbox.get_bounding_box(vowel_name)
         if do_snap:
@@ -258,6 +262,8 @@ class ThaiPuaFontGenerator:
         self,
         components: list[ComponentPlacement],
         *,
+        effective: PlacementSettings,
+        cons_uni: int,
         cons_settings: ConsonantSettings,
         cons_advance: int,
         tone_uni: int | None,
@@ -267,7 +273,9 @@ class ThaiPuaFontGenerator:
     ) -> None:
         """Place the tone mark, snapping it onto the above vowel when one is stacked."""
         base_role = ROLE_TONE_MARK_ON_ABOVE_VOWEL if above_placement is not None else None
-        offset = cons_settings.offset_for(ROLE_TONE_MARK, mark_uni=tone_uni, combo_key=combo_key, base_role=base_role)
+        offset = effective.mark_offset_for(
+            cons_uni, ROLE_TONE_MARK, mark_uni=tone_uni, combo_key=combo_key, base_role=base_role
+        )
         dx = cons_advance + offset.x
         if above_placement is not None:
             snap_cfg = cons_settings.snap_for(SNAP_TONE_TO_ABOVE)
@@ -338,6 +346,8 @@ class ThaiPuaFontGenerator:
         if below_name:
             self._place_below_vowel(
                 components,
+                effective=effective,
+                cons_uni=cons_uni,
                 cons_settings=cons_settings,
                 cons_advance=cons_advance,
                 cons_bbox=cons_box,
@@ -349,6 +359,8 @@ class ThaiPuaFontGenerator:
         if above_name:
             above_placement = self._place_above_vowel(
                 components,
+                effective=effective,
+                cons_uni=cons_uni,
                 cons_settings=cons_settings,
                 cons_advance=cons_advance,
                 cons_bbox=cons_box,
@@ -359,6 +371,8 @@ class ThaiPuaFontGenerator:
         if actual_tone_name:
             self._place_tone(
                 components,
+                effective=effective,
+                cons_uni=cons_uni,
                 cons_settings=cons_settings,
                 cons_advance=cons_advance,
                 tone_uni=tone_uni,

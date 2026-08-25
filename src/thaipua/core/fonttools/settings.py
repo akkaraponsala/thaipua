@@ -151,14 +151,34 @@ class ConsonantSettings:
 
 @dataclass(slots=True, frozen=True)
 class PlacementSettings:
-    """Root settings object mapping consonant codepoints to their overrides."""
+    """Root settings object holding font-global mark offsets and per-consonant overrides."""
 
     version: int = SETTINGS_VERSION
     metadata: Metadata = field(default_factory=Metadata)
+    marks: dict[str, dict[int, Offset]] = field(default_factory=dict)
     consonants: dict[int, ConsonantSettings] = field(default_factory=dict)
 
     def for_consonant(self, cons_uni: int) -> ConsonantSettings:
         return self.consonants.get(cons_uni, ConsonantSettings())
+
+    def mark_offset_for(
+        self, cons_uni: int, role: str, *, mark_uni: int | None, combo_key: str | None, base_role: str | None = None
+    ) -> Offset:
+        """Combine the per-consonant tier with the font-global mark offset and the base tier.
+
+        The global `marks` entry applies to every composite carrying `mark_uni`,
+        including multi-mark clusters resolved through the combo tier; the base-tier
+        fallback follows `ConsonantSettings.offset_for`.
+        """
+        cons = self.for_consonant(cons_uni)
+        specific = cons._per_glyph_offset(role, mark_uni=mark_uni, combo_key=combo_key)
+        global_offset = _ZERO_OFFSET
+        if mark_uni is not None:
+            group = self.marks.get(role)
+            if group is not None:
+                global_offset = group.get(mark_uni) or _ZERO_OFFSET
+        base_key = base_role if base_role is not None and base_role in cons.base_offsets else role
+        return specific + global_offset + cons.base_offsets.get(base_key, Offset())
 
 
 def default_placement_settings() -> PlacementSettings:
@@ -199,6 +219,9 @@ def settings_to_dict(settings: PlacementSettings) -> dict[str, Any]:
     md = _metadata_to_dict(settings.metadata)
     if md:
         payload["metadata"] = md
+    marks_json = _mark_offsets_to_dict(settings.marks)
+    if marks_json:
+        payload["marks"] = marks_json
     consonants_json: dict[str, Any] = {}
     for cp, cset in sorted(settings.consonants.items()):
         body = _consonant_settings_to_dict(cset)
@@ -218,6 +241,7 @@ def _build_from_dict(data: dict[str, Any]) -> PlacementSettings:
     return PlacementSettings(
         version=SETTINGS_VERSION,
         metadata=_build_metadata(data.get("metadata")),
+        marks=_build_mark_offsets(data.get("marks")),
         consonants=_build_consonants(data.get("consonants")),
     )
 

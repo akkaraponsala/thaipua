@@ -22,6 +22,7 @@ from thaipua.core.fonttools.settings import (
     canonicalize_substitution_context,
     canonicalize_tone_mark_context,
     load_placement_settings,
+    save_placement_settings,
     settings_to_dict,
 )
 
@@ -645,3 +646,94 @@ def test_composer_combo_key_requires_two_marks() -> None:
         ThaiPuaFontGenerator._combo_key(None, VOWEL_MAI_HAN_AKAT, TONE_MAI_EK)
         == f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
     )
+
+
+def test_global_mark_offset_adds_to_per_consonant_and_base_tiers() -> None:
+    settings = PlacementSettings(
+        marks={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-40, 0)}},
+        consonants={
+            CONSONANT_KO_KAI: ConsonantSettings(
+                base_offsets={ROLE_TONE_MARK: Offset(1, 2)},
+                mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
+            )
+        },
+    )
+    off = settings.mark_offset_for(CONSONANT_KO_KAI, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None)
+    assert off == Offset(-29, 22)
+
+
+def test_global_mark_offset_applies_under_combo_tier() -> None:
+    combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
+    settings = PlacementSettings(
+        marks={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-40, 0)}},
+        consonants={CONSONANT_KO_KAI: ConsonantSettings(combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, 5)}})},
+    )
+    off = settings.mark_offset_for(CONSONANT_KO_KAI, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key)
+    assert off == Offset(-35, 5)
+
+
+def test_mark_offset_for_without_global_entry_matches_consonant_resolution() -> None:
+    combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
+    cs = ConsonantSettings(
+        base_offsets={ROLE_TONE_MARK: Offset(1, 1)},
+        mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
+        combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
+    )
+    settings = PlacementSettings(consonants={CONSONANT_KO_KAI: cs})
+    single = settings.mark_offset_for(CONSONANT_KO_KAI, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None)
+    combo = settings.mark_offset_for(CONSONANT_KO_KAI, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key)
+    assert single == cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None)
+    assert combo == cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key)
+
+
+def test_global_mark_offset_is_scoped_to_its_role() -> None:
+    settings = PlacementSettings(marks={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-40, 0)}})
+    assert settings.mark_offset_for(
+        CONSONANT_KO_KAI, ROLE_ABOVE_VOWEL, mark_uni=VOWEL_MAI_HAN_AKAT, combo_key=None
+    ) == (Offset())
+
+
+def test_global_marks_round_trip(tmp_path: Path) -> None:
+    settings = PlacementSettings(
+        metadata=Metadata(font_name="Sarabun"),
+        marks={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-40, 3)}},
+        consonants={CONSONANT_KO_KAI: ConsonantSettings(base_offsets={ROLE_TONE_MARK: Offset(1, 1)})},
+    )
+    path = tmp_path / "settings.json"
+    save_placement_settings(settings, path)
+    save_and_load = load_placement_settings(path)
+    assert save_and_load.marks == {ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-40, 3)}}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["marks"] == {"tone_marks": {"U+0E48": {"x": -40, "y": 3}}}
+
+
+def test_load_v1_file_without_marks_yields_empty_global_tier(tmp_path: Path) -> None:
+    data = {"version": 1, "consonants": {"U+0E01": {"base_offsets": {"tone_mark": {"x": 1, "y": 1}}}}}
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    settings = load_placement_settings(path)
+    assert settings.marks == {}
+    off = settings.mark_offset_for(CONSONANT_KO_KAI, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None)
+    assert off == Offset(1, 1)
+
+
+def test_apply_global_mark_offset_sets_updates_and_clears() -> None:
+    from thaipua.gui.state import apply_global_mark_offset, current_global_mark_offset
+
+    settings = PlacementSettings()
+    apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, -40, 0, settings)
+    assert current_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, settings) == Offset(-40, 0)
+    apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, -35, 1, settings)
+    assert current_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, settings) == Offset(-35, 1)
+    apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, 0, 0, settings)
+    assert current_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, settings) == Offset()
+    assert settings.marks == {}
+
+
+def test_apply_global_mark_offset_rejects_unknown_role_or_codepoint() -> None:
+    from thaipua.gui.state import apply_global_mark_offset
+
+    settings = PlacementSettings()
+    apply_global_mark_offset("unknown_role", TONE_MAI_EK, -40, 0, settings)
+    apply_global_mark_offset(ROLE_TONE_MARK, CONSONANT_KO_KAI, -40, 0, settings)
+    assert settings.marks == {}

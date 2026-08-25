@@ -43,6 +43,7 @@ from thaipua.gui.state import (
     AppState,
     MarkCategory,
     apply_base_offset,
+    apply_global_mark_offset,
     apply_glyph_substitution,
     apply_offset,
     apply_snap,
@@ -167,6 +168,7 @@ class MainWindow(QMainWindow):
         controls = self._controls_pane
         controls.offset_changed.connect(self._on_offset_changed)
         controls.base_offset_changed.connect(self._on_base_offset_changed)
+        controls.global_mark_offset_changed.connect(self._on_global_mark_offset_changed)
         controls.glyph_substitution_changed.connect(self._on_glyph_substitution_changed)
         controls.snap_changed.connect(self._on_snap_changed)
         controls.category_changed.connect(self._on_category_changed)
@@ -635,6 +637,17 @@ class MainWindow(QMainWindow):
             return
         self._settings_generation += 1
         apply_base_offset(cons_uni, role, x, y, self._state.settings)
+        self._state.dirty = True
+        self._refresh_footer()
+        spec = self._active_spec()
+        if spec is not None:
+            self._render_pua_spec(spec)
+        self._schedule_grid_refresh()
+
+    def _on_global_mark_offset_changed(self, role: str, mark_uni: int, x: int, y: int) -> None:
+        """Commit a font-global mark-offset edit and refresh every composite carrying `mark_uni`."""
+        self._settings_generation += 1
+        apply_global_mark_offset(role, mark_uni, x, y, self._state.settings)
         self._state.dirty = True
         self._refresh_footer()
         spec = self._active_spec()

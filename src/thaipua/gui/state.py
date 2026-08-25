@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from thaipua.core.fonttools.settings import (
     ROLE_ABOVE_VOWEL,
     ROLE_BELOW_VOWEL,
+    ROLE_TO_MARK_CATEGORY,
     ROLE_TONE_MARK,
     SNAP_ABOVE_TO_CONS,
     SNAP_BELOW_TO_CONS,
@@ -307,6 +308,31 @@ def apply_base_offset(cons_uni: int, role: str, x: int, y: int, settings: Placem
         cs.base_offsets.pop(role, None)
     else:
         cs.base_offsets[role] = Offset(x, y)
+
+
+def current_global_mark_offset(role: str, mark_uni: int, settings: PlacementSettings) -> Offset:
+    """Return the font-global offset for `mark_uni` under `role`, or `Offset(0, 0)`."""
+    group = settings.marks.get(role)
+    if group is None:
+        return Offset()
+    return group.get(mark_uni, Offset())
+
+
+def apply_global_mark_offset(role: str, mark_uni: int, x: int, y: int, settings: PlacementSettings) -> None:
+    """Commit a font-global offset for `mark_uni` under `role`, clearing zero deltas.
+
+    Unknown roles or codepoints outside the role's category are ignored.
+    """
+    category = ROLE_TO_MARK_CATEGORY.get(role)
+    if category is None or mark_uni not in category:
+        return
+    group = settings.marks.setdefault(role, {})
+    if x == 0 and y == 0:
+        group.pop(mark_uni, None)
+        if not group:
+            settings.marks.pop(role, None)
+    else:
+        group[mark_uni] = Offset(x, y)
 
 
 def group_composites_by_consonant(pua_map: dict[str, str]) -> dict[int, list[CompositeSpec]]:
