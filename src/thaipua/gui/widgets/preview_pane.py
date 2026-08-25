@@ -429,7 +429,7 @@ class GlyphPreviewPane(QWidget):
         meta_bar = QWidget(self)
         meta_layout = QHBoxLayout(meta_bar)
         meta_layout.setContentsMargins(8, 6, 8, 6)
-        meta_layout.setSpacing(6)
+        meta_layout.setSpacing(4)
         self._unicode_label = QLabel("—", meta_bar)
         self._name_label = QLabel("—", meta_bar)
         self._unicode_label.setObjectName("MetaValue")

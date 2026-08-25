@@ -38,6 +38,7 @@ class Palette:
     BG_GRID_CELL_HOVER: str
     BG_GRID_CELL_SELECTED: str
     BG_GRID_CELL_EMPTY: str
+    BG_TOOLTIP: str
     TEXT_PRIMARY: str
     TEXT_SECONDARY: str
     TEXT_DIM: str
@@ -45,8 +46,6 @@ class Palette:
     ACCENT_HOVER: str
     BORDER: str
     BORDER_FOCUS: str
-    BG_TOOLTIP: str
-    BORDER_TOOLTIP: str
     ICON_FG: str
     GLYPH_FILL: str
     GLYPH_PEN: str
@@ -60,6 +59,7 @@ DARK_PALETTE: Palette = Palette(
     BG_GRID_CELL_HOVER="#3F4042",
     BG_GRID_CELL_SELECTED="#0A4A7A",
     BG_GRID_CELL_EMPTY="#1B1B1D",
+    BG_TOOLTIP="#2B2D31",
     TEXT_PRIMARY="#E4E7EB",
     TEXT_SECONDARY="#9AA0A6",
     TEXT_DIM="#80868B",
@@ -67,8 +67,6 @@ DARK_PALETTE: Palette = Palette(
     ACCENT_HOVER="#A1C4FA",
     BORDER="#3F4042",
     BORDER_FOCUS="#8AB4F7",
-    BG_TOOLTIP="#2B2D31",
-    BORDER_TOOLTIP="#54585E",
     ICON_FG="#E1E5E9",
     GLYPH_FILL="#FFFFFF",
     GLYPH_PEN="#F0F0F0",
@@ -81,6 +79,7 @@ LIGHT_PALETTE: Palette = Palette(
     BG_GRID_CELL_HOVER="#E8EAED",
     BG_GRID_CELL_SELECTED="#D0E4FC",
     BG_GRID_CELL_EMPTY="#F1F3F4",
+    BG_TOOLTIP="#FFFFFF",
     TEXT_PRIMARY="#4D5157",
     TEXT_SECONDARY="#5F6368",
     TEXT_DIM="#9AA0A6",
@@ -88,8 +87,6 @@ LIGHT_PALETTE: Palette = Palette(
     ACCENT_HOVER="#1765CC",
     BORDER="#DADCE0",
     BORDER_FOCUS="#1A73E8",
-    BG_TOOLTIP="#FFFFFF",
-    BORDER_TOOLTIP="#A9ADB3",
     ICON_FG="#494D53",
     GLYPH_FILL="#202124",
     GLYPH_PEN="#3F4042",
@@ -156,9 +153,9 @@ QLabel#PaneHeader {{
     color: {palette.TEXT_PRIMARY};
     font-weight: bold;
     font-size: 12pt;
-    padding: 8px 10px;
+    padding: 6px 10px;
 }}
-QLabel#Breadcrumb {{ color: {palette.TEXT_SECONDARY}; padding: 4px 8px; }}
+QLabel#Breadcrumb {{ color: {palette.TEXT_SECONDARY}; }}
 QLabel#Label {{ color: {palette.TEXT_SECONDARY}; }}
 QLabel#MetaValue {{ color: {palette.TEXT_PRIMARY}; font-family: "Consolas", monospace; }}
 
