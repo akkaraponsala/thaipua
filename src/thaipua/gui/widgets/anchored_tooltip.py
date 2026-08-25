@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QCursor, QMouseEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtGui import QColor, QCursor, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QLabel, QWidget
 
 from thaipua.gui import theme
@@ -17,7 +17,7 @@ _WAKE_UP_MS = 300
 _RADIUS_PX = 6
 _SHADOW_REACH_PX = 5
 _SHADOW_DROP_PX = 3
-_SHADOW_ALPHA = 45
+_SHADOW_ALPHA = 25
 
 
 class _TipWindow(QLabel):
@@ -48,7 +48,7 @@ class _TipWindow(QLabel):
         reach = float(_SHADOW_REACH_PX)
         drop = float(_SHADOW_DROP_PX)
         # The window is the box inflated by the shadow field; painting outside bounds would clip.
-        box = QRectF(self.rect()).adjusted(reach + 0.5, reach - drop + 0.5, -reach - 0.5, -reach - drop - 0.5)
+        box = QRectF(self.rect()).adjusted(reach, reach - drop, -reach, -reach - drop)
         # Layered alpha rects approximate a blur; a QGraphicsDropShadowEffect is unreliable on
         # translucent top-level windows.
         painter.setPen(Qt.PenStyle.NoPen)
@@ -58,9 +58,7 @@ class _TipWindow(QLabel):
             spread = float(k)
             ring = box.adjusted(-spread, -spread, spread, spread).translated(0.0, drop)
             painter.drawRoundedRect(ring, _RADIUS_PX + k, _RADIUS_PX + k)
-        palette = theme.get_palette()
-        painter.setPen(QPen(QColor(palette.BORDER_TOOLTIP), 1.0))
-        painter.setBrush(QColor(palette.BG_TOOLTIP))
+        painter.setBrush(QColor(theme.get_palette().BG_TOOLTIP))
         painter.drawRoundedRect(box, _RADIUS_PX, _RADIUS_PX)
         super().paintEvent(event)
 
