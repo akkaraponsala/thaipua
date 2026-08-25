@@ -22,7 +22,14 @@ from PySide6.QtWidgets import (
 from thaipua.core.file_codec import decode_files, encode_files
 from thaipua.core.fonttools.map_validation import IssueSeverity, PuaMapIssue
 from thaipua.core.fonttools.ownership import SlotOwnership
-from thaipua.core.fonttools.settings import SUB_ABOVE_VOWEL, SUB_BELOW_VOWEL, SUB_CONSONANT, SUB_TONE_MARK
+from thaipua.core.fonttools.settings import (
+    SUB_ABOVE_VOWEL,
+    SUB_BELOW_VOWEL,
+    SUB_CONSONANT,
+    SUB_TONE_MARK,
+    PlacementSettings,
+    default_placement_settings,
+)
 from thaipua.core.fonttools.specs import CompositeSpec
 from thaipua.core.layout import LayoutConflict
 from thaipua.core.paths import DEFAULT_PROFILES_DIR
@@ -61,6 +68,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 FONT_FILTER = "Font files (*.ttf *.otf);;All files (*.*)"
+PROFILE_FILTER = "Profile JSON (*.json);;All files (*.*)"
 TEXT_FILTER = "Text / string-table files (*.txt *.strings *.dlstrings *.ilstrings);;All files (*.*)"
 _SAVE_BLOCK_PREVIEW_LIMIT = 8
 """Maximum mapping issues listed in the save-blocked dialog before an ellipsis line."""
@@ -137,6 +145,8 @@ class MainWindow(QMainWindow):
         toolbar = self._toolbar
         toolbar.open_font_requested.connect(self._on_open_font)
         toolbar.save_font_requested.connect(self._on_save_font)
+        toolbar.profile_load_requested.connect(self._on_load_profile)
+        toolbar.profile_save_requested.connect(self._on_save_profile)
         toolbar.decode_pua_requested.connect(self._on_decode_pua)
         toolbar.encode_thai_requested.connect(self._on_encode_thai)
         toolbar.find_substitution_requested.connect(self._on_find_substitution)
@@ -155,6 +165,7 @@ class MainWindow(QMainWindow):
         controls.glyph_substitution_changed.connect(self._on_glyph_substitution_changed)
         controls.snap_changed.connect(self._on_snap_changed)
         controls.category_changed.connect(self._on_category_changed)
+        controls.reset_defaults_requested.connect(self._on_reset_defaults)
 
     def _on_open_font(self) -> None:
         """Open a font via a native dialog; load it through `FontService`."""
@@ -183,6 +194,7 @@ class MainWindow(QMainWindow):
         self._state.dirty = False
         self._grid_pane.set_font_loaded(True)
         self._toolbar.set_font_loaded(True)
+        self._controls_pane.set_font_loaded(True)
         self._refresh_grid_pane()
         self._refresh_footer()
         self._preview_pane.clear()
@@ -214,6 +226,63 @@ class MainWindow(QMainWindow):
         self._state.dirty = False
         self._refresh_footer()
         QMessageBox.information(self, "Save Font", f"Saved:\n{path}")
+
+    def _on_load_profile(self) -> None:
+        """Pick a profile JSON file and replace the live placement settings with it."""
+        if not self._service.is_loaded:
+            return
+        start = str(self._service.default_profile_path() or DEFAULT_PROFILES_DIR)
+        path, _ = QFileDialog.getOpenFileName(self, "Load Profile", start, PROFILE_FILTER)
+        if not path:
+            return
+        self._replace_placement_settings(self._service.load_profile(path))
+
+    def _on_save_profile(self) -> None:
+        """Pick a destination and write the current placement settings as profile JSON."""
+        if not self._service.is_loaded:
+            return
+        default = str(self._service.default_profile_path() or "profile.json")
+        path, _ = QFileDialog.getSaveFileName(self, "Save Profile", default, PROFILE_FILTER)
+        if not path:
+            return
+        try:
+            target = self._service.save_profile(path, self._state.settings)
+        except OSError as exc:
+            logger.exception("Failed to save profile to %s", path)
+            QMessageBox.critical(self, "Save Profile", f"Could not save profile:\n{exc}")
+            return
+        QMessageBox.information(self, "Save Profile", f"Saved:\n{target}")
+
+    def _on_reset_defaults(self) -> None:
+        """Reset the live placement settings to in-code defaults after confirmation."""
+        if not self._service.is_loaded:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Reset Placement Defaults",
+            "Replace all placement settings with defaults? Unsaved profile edits are lost.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._replace_placement_settings(default_placement_settings())
+
+    def _replace_placement_settings(self, settings: PlacementSettings) -> None:
+        """Swap in `settings`, invalidate installed composites, and refresh every dependent view."""
+        self._state.settings = settings
+        self._settings_generation += 1
+        self._installed_generations = {}
+        self._state.dirty = True
+        self._refresh_footer()
+        self._schedule_grid_refresh()
+        pua_code = self._state.active_pua_code
+        if pua_code is not None:
+            self._on_pua_clicked(pua_code)
+        elif self._state.active_consonant_uni is not None:
+            self._controls_pane.load_consonant_settings(
+                self._state.active_consonant_uni, self._state.settings, self._sub_catalog
+            )
 
     def _report_mapping_errors(self, errors: list[PuaMapIssue]) -> None:
         """Show the mapping errors that blocked the save, previewing at most `_SAVE_BLOCK_PREVIEW_LIMIT`."""
@@ -748,9 +817,10 @@ class MainWindow(QMainWindow):
             self._grid_pane.set_selected(self._state.active_pua_code)
 
     def _refresh_footer(self) -> None:
-        """Re-render the footer: font name, dirty marker, and occupancy notice."""
-        self._status_bar.set_font(self._state.font_path)
-        self._status_bar.set_dirty(self._state.dirty)
+        """Re-render the title bar and footer: font path with dirty marker, and occupancy notice."""
+        font_path = self._state.font_path
+        marker = "*" if self._state.dirty else ""
+        self.setWindowTitle(f"{marker}{font_path} — ThaiPUA" if font_path else "ThaiPUA")
         self._update_occupancy_notice()
 
     def closeEvent(self, event: QCloseEvent) -> None:

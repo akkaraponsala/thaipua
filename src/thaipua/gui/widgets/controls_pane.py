@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QRadioButton,
     QScrollArea,
     QSlider,
@@ -83,6 +84,7 @@ class ControlsPane(QWidget):
     glyph_substitution_changed = Signal(str, str)
     snap_changed = Signal(str, bool, int)
     category_changed = Signal(object)
+    reset_defaults_requested = Signal()
     _sub_combos: dict[str, QComboBox]
     _snap_checks: dict[str, QCheckBox]
     _snap_gaps: dict[str, QSpinBox]
@@ -130,6 +132,11 @@ class ControlsPane(QWidget):
         container_layout.addWidget(self._build_base_offsets_group())
         container_layout.addWidget(self._build_glyph_substitutions_group())
         container_layout.addWidget(self._build_snap_configs_group())
+        self._reset_btn = QPushButton("Reset Defaults", self)
+        self._reset_btn.setIcon(icons.icon("rotate-ccw"))
+        self._reset_btn.setToolTip("Reset Placement Defaults")
+        self._reset_btn.clicked.connect(self.reset_defaults_requested)
+        container_layout.addWidget(self._reset_btn)
         container_layout.addStretch(1)
         scroll.setWidget(container)
         outer.addWidget(scroll, 1)
@@ -145,6 +152,7 @@ class ControlsPane(QWidget):
         self._y_spin.valueChanged.connect(lambda v: self._mirror(self._y_slider, v))
         self.set_enabled(False)
         self.set_consonant_enabled(False)
+        self.set_font_loaded(False)
 
     def _build_offset_group(self) -> QGroupBox:
         """Build the *Mark Offsets* group: X/Y sliders + category radios."""
@@ -312,6 +320,10 @@ class ControlsPane(QWidget):
         chk = self._snap_checks[name]
         spin = self._snap_gaps[name]
         self.snap_changed.emit(name, chk.isChecked(), spin.value())
+
+    def set_font_loaded(self, loaded: bool) -> None:
+        """Toggle the pane-global actions that require a loaded font."""
+        self._reset_btn.setEnabled(loaded)
 
     def set_enabled(self, enabled: bool, categories: frozenset[MarkCategory] | None = None) -> None:
         """Toggle the mark-offset controls, restricting radios to the enabled categories.
@@ -514,9 +526,10 @@ class ControlsPane(QWidget):
             spin.blockSignals(False)
 
     def refresh_icons(self) -> None:
-        """Re-tint the axis icons for the active theme palette."""
+        """Re-tint the axis icons and the reset button for the active theme palette."""
         for icon_name, label in self._axis_icons:
             label.setPixmap(icons.icon(icon_name).pixmap(QSize(16, 16)))
+        self._reset_btn.setIcon(icons.icon("rotate-ccw"))
 
     def _slider_spin_pairs_flat(self) -> tuple[QSlider | QSpinBox, ...]:
         """Return the slider/spin tuple used to block + restore signals in bulk."""

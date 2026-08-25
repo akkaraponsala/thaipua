@@ -26,7 +26,6 @@ thaipua/
 │   │   ├── encoding.py               # Thai↔PUA encode/decode transforms + normalize_sara_am (pure, no map-file IO)
 │   │   ├── pua_map.py                # Thai suffix list, PUA-map load/save, free-slot search
 │   │   ├── layout.py                 # Deterministic PUA layout: canonical base + relocations + overrides + conflict detection
-│   │   ├── profiles.py               # Tiered profile resolution (resolve_settings_profile) + seed_default_profile
 │   │   ├── string_table.py           # Bethesda .STRINGS/.DLSTRINGS/.ILSTRINGS codec (StringTableError)
 │   │   ├── text_encoding.py          # detect_text_encoding (BOM sniffing, utf-8 → cp1252 fallback)
 │   │   └── file_codec.py             # encode_files / decode_files pipeline over text + string tables
@@ -39,7 +38,7 @@ thaipua/
 │   │   └── widgets/                  # controls_pane, glyph_grid_pane, preview_pane, top_toolbar, status_footer, dialogs, pua_mapping_dialog, occupancy_dialog
 │   └── app.py + __main__.py          # Entry: uv run python -m thaipua → app.main
 ├── assets/fonts/Sarabun-Regular.ttf  # Sample font for tests
-├── data/                               # Runtime data (repo root in dev): layout.json + pua_mapping.json + profiles/ + config.json + logs/
+├── data/                             # Runtime data (repo root in dev): layout.json + pua_mapping.json + profiles/ + config.json + logs/
 ├── pyproject.toml                    # src layout, ruff/mypy/pytest config
 └── pysidedeploy.spec                 # Nuitka bundle config
 ```
@@ -74,7 +73,7 @@ thaipua/
 - **Pure preview:** `compose_components` resolves substitutions and computes offsets/snaps read-only, returning `ComponentPlacement(glyph_name, affine-6-tuple)`. `font_service.render_composite_path` replays it into a `PathLike`. Grid cells use this path so edits show without touching the font.
 - **Viewport:** rebuilds only the active composite per tick via `regenerate_composite` (which installs into the in-memory font). Grid refresh is debounced 300ms via `MainWindow._grid_refresh_timer` — never rebuild the whole grid per slider tick.
 
-### Settings & Profile Resolution
+### Settings & Profiles
 
 Settings JSON shape: `{version, metadata, consonants: {U+XXXX: {base_offsets, mark_offsets, combo_offsets, snap_configs, glyph_substitutions}}}`. All codepoint keys use canonical `U+XXXX` notation; combo keys are ascending `U+XXXX+U+YYYY` (in-memory they normalize to char keys).
 
@@ -87,7 +86,7 @@ Settings JSON shape: `{version, metadata, consonants: {U+XXXX: {base_offsets, ma
 | `glyph_substitutions` | Per-codepoint `[{replacement, conditions}]`; conditions are mark roles, AND semantics |
 
 - Offset resolution (`ConsonantSettings.offset_for`): single marks read `mark_offsets[role][mark]`, multi-mark combos read `combo_offsets[combo][role]`; both add `(base_offsets[base_role or role] or 0)`. A tone mark stacked on an above vowel passes `base_role=ROLE_TONE_MARK_ON_ABOVE_VOWEL`.
-- Profile tiers for `<stem>.ttf`, first match wins: `profiles/<stem>.json` → `profiles/<family>.json` (part before first hyphen) → `profiles/default.json` → in-source `default_placement_settings()`. A missing tier logs at debug and falls through; malformed JSON falls back to defaults rather than erroring.
+- Profiles are **user-driven**: opening a font starts from in-code `default_placement_settings()`; the toolbar's Load/Save Profile (file dialogs via `FontService.load_profile`/`save_profile`) and the Controls pane's Reset Defaults are the sole profile IO. `default_profile_path()` suggests `<profiles_dir>/<stem>.json`.
 - Substitution matching canonicalizes both sides via `settings.context_canonicalizer(codepoint)` (category-dependent family merging). Most specific rule (longest canonicalized conditions) wins; ties broken by list order.
 - `state.py` helpers (`current_*` / `apply_offset` / `apply_base_offset` / `apply_glyph_substitution` / `apply_snap`) mutate `PlacementSettings` in place, clearing zero/disabled entries.
 
@@ -108,11 +107,11 @@ uv run pyside6-deploy -c pysidedeploy.spec  # bundle → build/thaipua.dist/
 
 ## Runtime Data (dev writes to `data/` at repo root)
 
-`paths.APP_DATA_DIR` = `_runtime_root()/data`; `_runtime_root()` returns the repo root unless `is_standalone_build()` (Nuitka sets `__compiled__`, not just `sys.frozen`), then the exe dir. `ensure_app_data_dirs()` (`core/bootstrap.py`, mkdir-only) creates the tree; `seed_default_profile()` (`core/profiles.py`) seeds `default.json` when missing; `app.main` calls both before opening the GUI. On load the app creates/mutates under `data/`:
+`paths.APP_DATA_DIR` = `_runtime_root()/data`; `_runtime_root()` returns the repo root unless `is_standalone_build()` (Nuitka sets `__compiled__`, not just `sys.frozen`), then the exe dir. `ensure_app_data_dirs()` (`core/bootstrap.py`, mkdir-only) creates the tree; `app.main` calls it before opening the GUI. On load the app creates/mutates under `data/`:
 
 - `layout.json` — `{base, relocations, overrides}`; the authoritative layout state (auto-bootstrapped to the canonical default)
 - `pua_mapping.json` — materialized cache of the effective map, regenerated on every layout change
-- `profiles/default.json` (seeded) and `profiles/<stem>.json` (written on Save Font)
+- `profiles/<name>.json` — written/read only via the toolbar's Save/Load Profile actions
 - `config.json` (theme; `DEFAULT_CONFIG_PATH`)
 - `logs/thaipua.log` (+ `.1`–`.5` rotating backups)
 

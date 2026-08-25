@@ -28,7 +28,6 @@ from thaipua.core.fonttools import (
     save_placement_settings,
     settings_to_dict,
 )
-from thaipua.core.profiles import ResolvedProfile, resolve_settings_profile
 from thaipua.core.pua_map import load_pua_map_dict
 from thaipua.core.string_table import (
     ParsedStringTable,
@@ -53,7 +52,6 @@ __all__ = [
     "ParsedStringTable",
     "PlacementSettings",
     "PuaEncodingMap",
-    "ResolvedProfile",
     "SnapConfig",
     "StringEntry",
     "StringTableError",
@@ -70,7 +68,6 @@ __all__ = [
     "load_pua_map_dict",
     "normalize_sara_am",
     "parse_string_table",
-    "resolve_settings_profile",
     "save_placement_settings",
     "settings_to_dict",
     "write_string_table",

@@ -32,6 +32,8 @@ from thaipua.core.fonttools.settings import (
     SUB_CONSONANT,
     SUB_TONE_MARK,
     PlacementSettings,
+    default_placement_settings,
+    load_placement_settings,
     save_placement_settings,
 )
 from thaipua.core.fonttools.specs import CompositeSpec, iter_composite_specs
@@ -53,7 +55,6 @@ from thaipua.core.paths import (
     DEFAULT_PROFILES_DIR,
     DEFAULT_PUA_MAP_PATH,
 )
-from thaipua.core.profiles import resolve_settings_profile
 from thaipua.core.pua_map import load_pua_map_dict, save_pua_map
 from thaipua.gui.glyph_pen import PathLike, render_glyph_path, render_placed_components
 
@@ -189,13 +190,10 @@ class FontService:
     def load_font(
         self, path: str | Path, settings: PlacementSettings | None = None, profiles_dir: str | Path | None = None
     ) -> None:
-        """Open a font for editing, resolving its placement profile when settings are omitted."""
+        """Open a font for editing with `settings`, or in-code defaults when omitted."""
         src = Path(path)
         self._profiles_dir = str(profiles_dir) if profiles_dir is not None else DEFAULT_PROFILES_DIR
-        if settings is None:
-            resolved = resolve_settings_profile(src, profiles_dir=profiles_dir)
-            settings = resolved.settings
-        self._gen = ThaiPuaFontGenerator(str(src), settings)
+        self._gen = ThaiPuaFontGenerator(str(src), settings if settings is not None else default_placement_settings())
         self._src_path = src
         self._output_path = self._default_output_path(src, ttf_suffix=self._gen.source_is_cff)
         self._state_version += 1
@@ -619,7 +617,7 @@ class FontService:
         return results
 
     def save_font(self, output_path: str | Path | None, settings: PlacementSettings, pua_map: dict[str, str]) -> str:
-        """Rebuild all composites, write the font to `output_path`, and persist the settings profile."""
+        """Rebuild all composites and write the font to `output_path`."""
         if self._gen is None:
             raise RuntimeError("Cannot save: no font loaded.")
         target = str(output_path) if output_path is not None else self._output_path
@@ -631,21 +629,27 @@ class FontService:
             logger.warning("Saved font keeps %d locked PUA slot(s) untouched (unrecognized content)", locked)
         self._gen.font.save(target)
         self._output_path = target
-        self._persist_profile(settings)
         logger.info("Saved generated font to %s", target)
         return target
 
-    def _persist_profile(self, settings: PlacementSettings) -> Path | None:
-        """Save `settings` to the stem-tier profile so edits survive a reload.
-
-        Family- and default-tier profiles are left untouched.
-        """
+    def default_profile_path(self) -> Path | None:
+        """Return the suggested `<stem>.json` path under the profiles dir, or `None` before a load."""
         if self._src_path is None:
             return None
-        profile_path = Path(self._profiles_dir) / f"{self._src_path.stem}.json"
-        profile_path.parent.mkdir(parents=True, exist_ok=True)
-        save_placement_settings(settings, profile_path)
-        return profile_path
+        return Path(self._profiles_dir) / f"{self._src_path.stem}.json"
+
+    def load_profile(self, path: str | Path) -> PlacementSettings:
+        """Read placement settings from `path`, falling back to defaults on unreadable content."""
+        settings = load_placement_settings(path)
+        logger.info("Loaded profile %s", path)
+        return settings
+
+    def save_profile(self, path: str | Path, settings: PlacementSettings) -> Path:
+        """Write `settings` to `path` as JSON, creating parent directories."""
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        save_placement_settings(settings, target)
+        return target
 
     def find_substitutions(self) -> dict[str, list[GlyphSubstitution]]:
         """Return the per-category GSUB substitution catalog for the live font."""

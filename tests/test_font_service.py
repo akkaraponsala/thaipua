@@ -7,11 +7,19 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from conftest import FakeGlyf, make_glyf
+from conftest import SAMPLE_FONT_PATH, FakeGlyf, make_glyf
 
 from thaipua.core.constants import PUA_RANGE_END
 from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
 from thaipua.core.fonttools.map_validation import IssueSeverity
+from thaipua.core.fonttools.settings import (
+    ROLE_TONE_MARK,
+    ConsonantSettings,
+    Offset,
+    PlacementSettings,
+    default_placement_settings,
+    save_placement_settings,
+)
 from thaipua.core.fonttools.specs import CompositeSpec
 from thaipua.core.layout import (
     canonical_codepoint,
@@ -40,6 +48,12 @@ def _service_with_font(cmap: dict[int, str], glyf: FakeGlyf | None = None) -> Fo
     service = FontService()
     service._gen = cast(ThaiPuaFontGenerator, SimpleNamespace(font=_FakeFont(cmap, glyf)))
     return service
+
+
+def _settings_with_override() -> PlacementSettings:
+    settings = default_placement_settings()
+    settings.consonants[0x0E01] = ConsonantSettings(base_offsets={ROLE_TONE_MARK: Offset(x=3, y=4)})
+    return settings
 
 
 def test_pua_slot_context_is_none_without_a_font() -> None:
@@ -274,3 +288,55 @@ def test_bulk_override_and_relocate_each_persist_the_layout_once(
     assert len(set(moved.values())) == len(keys)
     assert all(codepoint >= 0xE000 + 2016 for codepoint in moved.values())
     assert persist_calls == 2
+
+
+def test_default_profile_path_follows_the_loaded_font_stem(tmp_path: Path) -> None:
+    service = FontService()
+    assert service.default_profile_path() is None
+
+    service.load_font(SAMPLE_FONT_PATH, profiles_dir=tmp_path / "profiles")
+
+    assert service.default_profile_path() == tmp_path / "profiles" / "Sarabun-Regular.json"
+
+
+def test_load_font_starts_from_defaults_ignoring_profile_files(tmp_path: Path) -> None:
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir()
+    save_placement_settings(_settings_with_override(), profiles_dir / "Sarabun-Regular.json")
+
+    service = FontService()
+    service.load_font(SAMPLE_FONT_PATH, profiles_dir=profiles_dir)
+
+    assert service.generator is not None
+    assert service.generator.settings.consonants == {}
+
+
+def test_profile_save_then_load_roundtrips_overrides(tmp_path: Path) -> None:
+    service = FontService()
+
+    target = service.save_profile(tmp_path / "profiles" / "Sarabun-Regular.json", _settings_with_override())
+    loaded = FontService().load_profile(target)
+
+    assert loaded.consonants[0x0E01].base_offsets == {ROLE_TONE_MARK: Offset(x=3, y=4)}
+
+
+def test_save_font_writes_no_profile_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    profiles_dir = tmp_path / "profiles"
+    service = FontService()
+    service.set_layout_path(str(tmp_path / "layout.json"))
+    service.set_pua_map_path(str(tmp_path / "pua.json"))
+    service.load_font(SAMPLE_FONT_PATH, profiles_dir=profiles_dir)
+    pua_map = service.load_layout()
+    assert service.generator is not None
+    monkeypatch.setattr(service, "regenerate_all", lambda settings, mapping: [])
+
+    def boom(settings: Any, path: Any) -> None:
+        raise AssertionError("save_font must not persist a profile")
+
+    monkeypatch.setattr("thaipua.gui.font_service.save_placement_settings", boom)
+    out = tmp_path / "out.ttf"
+
+    service.save_font(out, default_placement_settings(), pua_map)
+
+    assert out.is_file()
+    assert list(profiles_dir.glob("*.json")) == []

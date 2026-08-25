@@ -32,7 +32,7 @@ Typical workflow:
 
 1. **Open Font** — a `pua_mapping.json` is auto-created at the app data directory, allocating a PUA codepoint (starting at U+E000) for every consonant + suffix combination.
 2. Select a consonant, then a variant from the glyph grid; tune offsets / substitutions / snaps in the right pane with live preview.
-3. **Save Font** — writes `<stem>_pua.<ext>` next to the source and persists your settings to `profiles/<stem>.json`.
+3. **Save Font** — writes `<stem>_pua.<ext>` next to the source. Use the toolbar's **Load/Save Profile** to reuse placement settings, or the Controls pane's **Reset Defaults** to start over.
 4. Use **Encode Thai → PUA** / **Decode PUA → Thai** to convert text files against the mapping.
 
 ## Development

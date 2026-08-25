@@ -1,4 +1,4 @@
-"""Top action toolbar: Open/Save Font, Decode PUA, Encode Thai, Find Substitutions, Settings."""
+"""Top action toolbar: Open/Save Font, Profiles, Decode/Encode PUA, Find Substitutions, Settings."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ class TopToolbar(QWidget):
 
     open_font_requested = Signal()
     save_font_requested = Signal()
+    profile_load_requested = Signal()
+    profile_save_requested = Signal()
     decode_pua_requested = Signal()
     encode_thai_requested = Signal()
     edit_mapping_requested = Signal()
@@ -32,6 +34,12 @@ class TopToolbar(QWidget):
         self._save_btn = QPushButton(self)
         self._save_btn.setIcon(icons.icon("save"))
         self._save_btn.setToolTip("Save Font")
+        self._profile_load_btn = QPushButton(self)
+        self._profile_load_btn.setIcon(icons.icon("file-up"))
+        self._profile_load_btn.setToolTip("Load Profile")
+        self._profile_save_btn = QPushButton(self)
+        self._profile_save_btn.setIcon(icons.icon("file-down"))
+        self._profile_save_btn.setToolTip("Save Profile")
         self._decode_btn = QPushButton(self)
         self._decode_btn.setIcon(icons.icon("file-type-corner"))
         self._decode_btn.setToolTip("Decode PUA → Thai")
@@ -53,6 +61,8 @@ class TopToolbar(QWidget):
         for btn in [
             self._open_btn,
             self._save_btn,
+            self._profile_load_btn,
+            self._profile_save_btn,
             self._decode_btn,
             self._encode_btn,
             self._find_btn,
@@ -64,6 +74,8 @@ class TopToolbar(QWidget):
             btn.setMinimumSize(28, 28)
         layout.addWidget(self._open_btn)
         layout.addWidget(self._save_btn)
+        layout.addWidget(self._profile_load_btn)
+        layout.addWidget(self._profile_save_btn)
         layout.addWidget(self._decode_btn)
         layout.addWidget(self._encode_btn)
         layout.addWidget(self._find_btn)
@@ -73,6 +85,8 @@ class TopToolbar(QWidget):
         layout.addWidget(self._settings_btn)
         self._open_btn.clicked.connect(self.open_font_requested)
         self._save_btn.clicked.connect(self.save_font_requested)
+        self._profile_load_btn.clicked.connect(self.profile_load_requested)
+        self._profile_save_btn.clicked.connect(self.profile_save_requested)
         self._decode_btn.clicked.connect(self.decode_pua_requested)
         self._encode_btn.clicked.connect(self.encode_thai_requested)
         self._find_btn.clicked.connect(self.find_substitution_requested)
@@ -84,6 +98,8 @@ class TopToolbar(QWidget):
     def set_font_loaded(self, loaded: bool) -> None:
         """Toggle the actions that require a loaded font."""
         self._save_btn.setEnabled(loaded)
+        self._profile_load_btn.setEnabled(loaded)
+        self._profile_save_btn.setEnabled(loaded)
         self._decode_btn.setEnabled(loaded)
         self._encode_btn.setEnabled(loaded)
         self._mapping_btn.setEnabled(loaded)
@@ -94,6 +110,8 @@ class TopToolbar(QWidget):
         """Re-tint every button icon for the active theme palette."""
         self._open_btn.setIcon(icons.icon("folder-open"))
         self._save_btn.setIcon(icons.icon("save"))
+        self._profile_load_btn.setIcon(icons.icon("file-up"))
+        self._profile_save_btn.setIcon(icons.icon("file-down"))
         self._decode_btn.setIcon(icons.icon("file-type-corner"))
         self._encode_btn.setIcon(icons.icon("file-digit"))
         self._find_btn.setIcon(icons.icon("search"))

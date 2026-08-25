@@ -8,7 +8,6 @@ from pathlib import Path
 DATA_DIR_NAME: str = "data"
 ASSETS_DIR_NAME: str = "assets"
 PROFILES_DIR_NAME: str = "profiles"
-DEFAULT_PROFILE_FILE_NAME: str = "default.json"
 
 
 def is_standalone_build() -> bool:

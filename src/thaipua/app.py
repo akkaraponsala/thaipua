@@ -13,7 +13,6 @@ from PySide6.QtWidgets import QApplication
 from thaipua.core.bootstrap import ensure_app_data_dirs
 from thaipua.core.logging import setup_logging
 from thaipua.core.paths import ASSETS_DIR
-from thaipua.core.profiles import seed_default_profile
 from thaipua.gui.main_window import MainWindow
 
 logger = logging.getLogger(__name__)
@@ -24,7 +23,6 @@ _LOGO_PATH: Path = ASSETS_DIR / "images" / "logo.png"
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the application: prepare data directories, then open the main window."""
     ensure_app_data_dirs()
-    seed_default_profile()
     setup_logging()
     logger.info("Starting thaipua")
     app = QApplication(list(argv) if argv is not None else sys.argv)
