@@ -15,8 +15,7 @@ from thaipua.gui import theme
 IconName = Literal[
     "folder-open",
     "save",
-    "binary",
-    "file-input",
+    "gavel",
     "file-digit",
     "file-type-corner",
     "file-up",
@@ -30,7 +29,6 @@ IconName = Literal[
     "axis-y",
     "chevron-left",
     "chevron-right",
-    "check",
 ]
 _ICON_DIR: Final[Path] = ASSETS_DIR / "icons"
 _CURRENT_COLOR: Final[str] = "currentColor"
