@@ -101,7 +101,7 @@ def _route_files(
 def encode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
     """Encode Thai text in each target file to PUA codepoints.
 
-    Returns without writing when the mapping at `map_path` cannot be loaded.
+    Return without writing when the mapping at `map_path` cannot be loaded.
     """
     encoding_map = load_encoding_map(map_path)
     if encoding_map is None:
@@ -118,7 +118,7 @@ def encode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
 def decode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
     """Decode PUA codepoints in each target file back to Thai text.
 
-    Returns without writing when the mapping at `map_path` cannot be loaded.
+    Return without writing when the mapping at `map_path` cannot be loaded.
     """
     decode_table = load_decode_table(map_path)
     if decode_table is None:

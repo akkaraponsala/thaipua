@@ -6,10 +6,7 @@ from PySide6.QtWidgets import QStatusBar, QWidget
 
 
 class StatusBar(QStatusBar):
-    """Footer status bar showing a persistent warning notice."""
-
     def __init__(self, parent: QWidget | None = None) -> None:
-        """Initialize the footer with no notice."""
         super().__init__(parent)
         self._notice: str | None = None
 

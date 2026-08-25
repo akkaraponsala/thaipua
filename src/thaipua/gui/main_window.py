@@ -285,7 +285,7 @@ class MainWindow(QMainWindow):
             )
 
     def _report_mapping_errors(self, errors: list[PuaMapIssue]) -> None:
-        """Show the mapping errors that blocked the save, previewing at most `_SAVE_BLOCK_PREVIEW_LIMIT`."""
+        """Show the mapping errors blocking the save, previewing at most `_SAVE_BLOCK_PREVIEW_LIMIT`."""
         lines = [f"{issue.thai_key}: {issue.message}" for issue in errors[:_SAVE_BLOCK_PREVIEW_LIMIT]]
         hidden = len(errors) - len(lines)
         if hidden > 0:
@@ -551,7 +551,7 @@ class MainWindow(QMainWindow):
         self._controls_pane.set_enabled(False)
 
     def _on_pua_clicked(self, pua_code: int) -> None:
-        """Mark `pua_code` selected; load preview + controls."""
+        """Mark `pua_code` selected and load its preview and controls."""
         self._state.active_pua_code = pua_code
         spec = self._pua_index.get(pua_code)
         if spec is None:
@@ -587,7 +587,7 @@ class MainWindow(QMainWindow):
         self._controls_pane.clear_consonant_settings()
 
     def _on_prev_page(self) -> None:
-        """Decrement the current grid page; clamps to the first page."""
+        """Decrement the current grid page; `_refresh_grid_pane` clamps to the first page."""
         if self._state.active_consonant_uni is None:
             self._state.consonants_page -= 1
         else:
@@ -595,7 +595,7 @@ class MainWindow(QMainWindow):
         self._refresh_grid_pane()
 
     def _on_next_page(self) -> None:
-        """Increment the current grid page; clamps via `_refresh_grid_pane`."""
+        """Increment the current grid page; `_refresh_grid_pane` clamps to the last page."""
         if self._state.active_consonant_uni is None:
             self._state.consonants_page += 1
         else:

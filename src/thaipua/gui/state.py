@@ -81,7 +81,7 @@ class AppState:
 def inferable_consonants() -> list[int]:
     """Return the 42 modern Thai consonant codepoints in canonical order.
 
-    `THAI_CONSONANTS` is a `set`; this helper exposes the ordered list used to drive the
+    `THAI_CONSONANTS` is a `set`; this helper exposes the ordered list driving the
     consonant-index page grid.
     """
     return sorted(THAI_CONSONANTS)
@@ -249,8 +249,8 @@ def current_glyph_substitution(
 ) -> str | None:
     """Return the best-matching rule's replacement glyph for `codepoint` at `cons_uni`.
 
-    Returns `None` when `cons_uni` has no entry in `settings.consonants` or no matching
-    rule exists. Passes `present_roles` so contextual rules match.
+    Return `None` when `cons_uni` has no entry in `settings.consonants` or no matching
+    rule exists. Pass `present_roles` so contextual rules match.
     """
     return settings.for_consonant(cons_uni).substitution_for(codepoint, present_roles=present_roles)
 

@@ -191,7 +191,7 @@ class _Viewport(QWidget):
         )
 
     def _ensure_glyph_visible(self, margin: float = 0.0) -> bool:
-        """Pan minimally when the glyph bbox leaves the viewport; return True when adjusted."""
+        """Pan minimally when the glyph bbox leaves the viewport; return `True` when adjusted."""
         if not self._has_drawable_glyph():
             return False
         bbox = self._glyph_bbox_font()

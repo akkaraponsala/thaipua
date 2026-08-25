@@ -532,5 +532,5 @@ class ControlsPane(QWidget):
         self._reset_btn.setIcon(icons.icon("rotate-ccw"))
 
     def _slider_spin_pairs_flat(self) -> tuple[QSlider | QSpinBox, ...]:
-        """Return the slider/spin tuple used to block + restore signals in bulk."""
+        """Return the slider/spin tuple used to block and restore signals in bulk."""
         return (self._x_slider, self._x_spin, self._y_slider, self._y_spin)

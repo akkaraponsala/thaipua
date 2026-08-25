@@ -51,7 +51,7 @@ def normalize_sara_am(content: str) -> str:
 
 
 def _apply_encoding(content: str, encoding_map: PuaEncodingMap) -> str:
-    """Normalize SARA AM forms in content and substitute Thai clusters via encoding_map."""
+    """Normalize SARA AM forms in content and substitute Thai clusters via `encoding_map`."""
     normalized = normalize_sara_am(content)
     return encoding_map.pattern.sub(lambda m: encoding_map.table[m.group(0)], normalized)
 

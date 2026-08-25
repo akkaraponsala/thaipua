@@ -19,7 +19,7 @@ _TRUETYPE_SFNT_VERSION = "\000\001\000\000"
 
 
 def has_cff_outlines(font: TTFont) -> bool:
-    """Return True when `font` carries PostScript outlines and no `glyf` table."""
+    """Return `True` when `font` carries PostScript outlines and no `glyf` table."""
     return "glyf" not in font and "CFF " in font
 
 

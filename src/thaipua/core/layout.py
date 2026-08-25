@@ -1,9 +1,4 @@
-"""Deterministic Thai-cluster-to-PUA layout: canonical assignment, deltas, storage, and conflict detection.
-
-The layout is a pure function of the cluster — `codepoint = base + ordinal` — so every
-install produces the same mapping regardless of which font was opened first. Divergence
-from canonical is explicit state (relocations), never a product of scan-and-skip.
-"""
+"""Deterministic Thai-cluster-to-PUA layout: canonical assignment, deltas, storage, and conflict detection."""
 
 from __future__ import annotations
 
@@ -44,7 +39,7 @@ def key_at_ordinal(ordinal: int) -> str:
 
 
 def canonical_codepoint(thai_key: str, base: int) -> int | None:
-    """Return the deterministic codepoint for `thai_key` under `base`, or `None` when malformed."""
+    """Return the deterministic codepoint `base + ordinal` for `thai_key`, or `None` when malformed."""
     ordinal = cluster_ordinal(thai_key)
     return None if ordinal is None else base + ordinal
 

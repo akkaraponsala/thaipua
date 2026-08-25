@@ -162,7 +162,7 @@ class FontService:
     def override_slots(self, codepoints: Iterable[int]) -> int:
         """Approve overwriting several locked slots with a single layout persist.
 
-        Returns the number of newly approved slots; no-op when nothing is new
+        Return the number of newly approved slots; no-op when nothing is new
         or no layout is loaded.
         """
         if self._layout is None:
@@ -224,8 +224,8 @@ class FontService:
     def load_layout(self) -> dict[str, str]:
         """Load layout configuration, bootstrapping the canonical default when missing.
 
-        Materializes the PUA-map cache file so text encode/decode works before any
-        font is loaded; returns the effective Thai→PUA map.
+        Materialize the PUA-map cache file so text encode/decode works before any
+        font is loaded; return the effective Thai→PUA map.
         """
         self._layout = load_layout_state(self._layout_path)
         if self._layout is None:
@@ -242,7 +242,7 @@ class FontService:
         return canonical_tail_start(self._layout.base) if self._layout is not None else None
 
     def set_base_codepoint(self, base: int) -> dict[str, str]:
-        """Change the canonical layout origin and rematerialize; returns the updated map.
+        """Change the canonical layout origin and rematerialize; return the updated map.
 
         Existing relocations are kept verbatim; targets that now collide with
         canonical assignments surface as validator errors in the mapping editor.
@@ -260,9 +260,9 @@ class FontService:
         return self._persist_layout()
 
     def relocate_key(self, thai_key: str) -> int | None:
-        """Move `thai_key` to the first free tail-zone slot; returns its new codepoint.
+        """Move `thai_key` to the first free tail-zone slot; return its new codepoint.
 
-        Returns `None` when no layout is loaded or the PUA range is exhausted.
+        Return `None` when no layout is loaded or the PUA range is exhausted.
         """
         return self.relocate_keys([thai_key]).get(thai_key)
 
@@ -270,7 +270,7 @@ class FontService:
         """Move several keys into the tail zone with a single layout persist.
 
         Targets are assigned sequentially past the canonical block; iteration
-        stops when the range is exhausted. Returns the succeeded key→codepoint
+        stops when the range is exhausted. Return the succeeded key→codepoint
         moves.
         """
         if self._layout is None:
@@ -322,7 +322,7 @@ class FontService:
         return self._persist_layout()
 
     def _persist_layout(self) -> dict[str, str]:
-        """Write layout state and the materialized map cache; returns the effective map."""
+        """Write layout state and the materialized map cache; return the effective map."""
         if self._layout is None:
             raise RuntimeError("Cannot persist a layout before loading one.")
         save_layout_state(self._layout, self._layout_path)
@@ -375,7 +375,7 @@ class FontService:
 
         Prefers typo metrics with hhea fallback so glyphs stay optically large;
         mark stacks exceeding the box are clamped per cell at paint time.
-        Returns (0, 0) without a font.
+        Return (0, 0) without a font.
         """
         if self._gen is None or self._gen.font is None:
             return (0.0, 0.0)
@@ -448,7 +448,7 @@ class FontService:
     def _component_boxes(self, glyph_name: str, spec: CompositeSpec | None) -> list[ComponentBox]:
         """Compute per-component boxes for an installed composite, ordered consonant first.
 
-        Returns an empty list for non-composite glyphs or fonts without `glyf`.
+        Return an empty list for non-composite glyphs or fonts without `glyf`.
         """
         if spec is None or self._gen is None or self._gen.font is None:
             return []

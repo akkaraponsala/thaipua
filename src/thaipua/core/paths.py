@@ -11,7 +11,7 @@ PROFILES_DIR_NAME: str = "profiles"
 
 
 def is_standalone_build() -> bool:
-    """Return True when running as a packaged executable."""
+    """Return `True` when running as a packaged executable."""
     return bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
 
 

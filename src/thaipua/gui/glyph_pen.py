@@ -90,8 +90,8 @@ def render_placed_components(
 ) -> None:
     """Draw placed components into `path`, applying each transform.
 
-    Lets a composite layout be previewed from placements alone, without an installed
-    glyph; components missing from the font are skipped.
+    Preview a composite layout from placements alone without installing a glyph;
+    components missing from the font are skipped.
     """
     if not components:
         return None

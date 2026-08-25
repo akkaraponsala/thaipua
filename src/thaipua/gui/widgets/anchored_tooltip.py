@@ -187,7 +187,7 @@ class AnchoredTooltipFilter(QObject):
     def _show_for(self, watched: QObject) -> bool:
         """Popup `watched`'s tooltip under its rect; item-view cells anchor to their row cell.
 
-        Returns `True` when consumed; empty tooltips fall through to Qt's default path.
+        Return `True` when consumed; empty tooltips fall through to Qt's default path.
         """
         widget = watched if isinstance(watched, QWidget) else None
         self._show_timer.stop()

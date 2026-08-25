@@ -306,7 +306,7 @@ class ThaiPuaFontGenerator:
     ) -> list[ComponentPlacement] | None:
         """Compute component placements for a cluster without modifying the font.
 
-        Applies substitutions, offsets, and snaps exactly as an install would; return
+        Apply substitutions, offsets, and snaps exactly as an install would; return
         `None` when the consonant glyph is missing from the font.
         """
         effective = settings if settings is not None else self.settings
@@ -423,9 +423,9 @@ class ThaiPuaFontGenerator:
     def _install_composite_glyph(self, glyph_name: str, glyph: Any, unicode_point: int, width_from: str) -> bool:
         """Store the glyph and map `unicode_point` on every Unicode cmap subtable.
 
-        Appends the name to the glyph order when new; otherwise replaces the stored
-        glyph in place so existing references stay valid. Copies the advance width from
-        `width_from` and returns whether an existing glyph was replaced.
+        Append the name to the glyph order when new; otherwise replace the stored glyph
+        in place so existing references stay valid. Copy the advance width from
+        `width_from` and report whether an existing glyph was replaced.
         """
         replaced = glyph_name in self._glyph_names
         if not replaced:
