@@ -28,6 +28,7 @@ class CellVisual:
     path: QPainterPath | None = None
     ref_ascent: float = 0.0
     ref_descent: float = 0.0
+    tooltip: str = ""
 
 
 class _GlyphSurface(QWidget):
@@ -147,6 +148,7 @@ class _GlyphCell(QFrame):
                 ref_descent=visual.ref_descent,
             )
             self._small.setText(visual.subtitle)
+            self.setToolTip(visual.tooltip)
         else:
             self._art.set_content("", None)
             self._small.setText("")
@@ -242,6 +244,7 @@ class GlyphGridPane(QWidget):
         super().__init__(parent)
         self._mode = "consonant"
         self._pua_label: str | None = None
+        self._pua_range: str | None = None
         self._cells: list[_GlyphCell] = []
         self._subtitle_font = QFont("Consolas", 8)
         outer = QVBoxLayout(self)
@@ -297,9 +300,10 @@ class GlyphGridPane(QWidget):
             f"QPushButton:hover {{ background-color: {palette.BG_GRID_CELL_HOVER}; border-radius: 4px; }}"
         )
 
-    def _render_crumbs(self, pua_label: str | None) -> None:
+    def _render_crumbs(self, pua_label: str | None, range_label: str | None = None) -> None:
         """Show the breadcrumb path; ancestor segments stay clickable and the current page's segment bolds."""
         self._pua_label = pua_label
+        self._pua_range = range_label
         on_consonant_page = pua_label is None
         self._prefix.setStyleSheet(self._crumb_style(active=False))
         self._cons_crumb.setStyleSheet(self._crumb_style(active=on_consonant_page))
@@ -308,7 +312,10 @@ class GlyphGridPane(QWidget):
         self._sep.setVisible(not on_consonant_page)
         self._pua_crumb.setVisible(not on_consonant_page)
         if not on_consonant_page:
-            self._pua_crumb.setText(f"PUA [{pua_label}]")
+            text = f"PUA [{pua_label}]"
+            if range_label:
+                text = f"{text} {range_label}"
+            self._pua_crumb.setText(text)
             self._pua_crumb.setStyleSheet(self._crumb_style(active=True))
 
     def _build_grid(self) -> QWidget:
@@ -358,7 +365,7 @@ class GlyphGridPane(QWidget):
         self._back_btn.setIcon(icons.icon("arrow-left"))
         self._prev_btn.setIcon(icons.icon("chevron-left"))
         self._next_btn.setIcon(icons.icon("chevron-right"))
-        self._render_crumbs(self._pua_label)
+        self._render_crumbs(self._pua_label, self._pua_range)
 
     def show_consonants(self, visuals: list[CellVisual], *, page_index: int, total_pages: int) -> None:
         """Render the consonant-page grid using `visuals` for the current page."""
@@ -367,10 +374,18 @@ class GlyphGridPane(QWidget):
         self._back_btn.setEnabled(False)
         self._render_page(visuals, page_index, total_pages)
 
-    def show_pua(self, visuals: list[CellVisual], *, consonant_label: str, page_index: int, total_pages: int) -> None:
-        """Render a PUA-page grid using `visuals`, with the breadcrumb context `[x]`."""
+    def show_pua(
+        self,
+        visuals: list[CellVisual],
+        *,
+        consonant_label: str,
+        page_index: int,
+        total_pages: int,
+        range_label: str | None = None,
+    ) -> None:
+        """Render a PUA-page grid using `visuals`, with the breadcrumb context `[x]` plus PUA range."""
         self._mode = "pua"
-        self._render_crumbs(consonant_label)
+        self._render_crumbs(consonant_label, range_label)
         self._back_btn.setEnabled(True)
         self._render_page(visuals, page_index, total_pages)
 

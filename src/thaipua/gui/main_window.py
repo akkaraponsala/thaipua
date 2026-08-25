@@ -763,6 +763,7 @@ class MainWindow(QMainWindow):
         start = page * GRID_PAGE_SIZE
         slice_items = cons[start : start + GRID_PAGE_SIZE]
         ref_ascent, ref_descent = self._service.display_extents() if self._service.is_loaded else (0.0, 0.0)
+        groups = group_composites_by_consonant(self._state.pua_map)
         visuals = []
         for cp in slice_items:
             path: QPainterPath | None = None
@@ -771,6 +772,7 @@ class MainWindow(QMainWindow):
                 self._service.render_glyph(cp, cell_path)
                 if not cell_path.isEmpty():
                     path = cell_path
+            range_label = self._pua_range_label(groups.get(cp, []))
             visuals.append(
                 CellVisual(
                     key=cp,
@@ -779,6 +781,7 @@ class MainWindow(QMainWindow):
                     path=path,
                     ref_ascent=ref_ascent,
                     ref_descent=ref_descent,
+                    tooltip=f"PUA block: {range_label}" if range_label else "",
                 )
             )
         self._grid_pane.show_consonants(visuals, page_index=page, total_pages=total_pages)
@@ -812,9 +815,29 @@ class MainWindow(QMainWindow):
                     ref_descent=ref_descent,
                 )
             )
-        self._grid_pane.show_pua(visuals, consonant_label=chr(cons_uni), page_index=page, total_pages=total_pages)
+        self._grid_pane.show_pua(
+            visuals,
+            consonant_label=chr(cons_uni),
+            range_label=self._pua_range_label(specs),
+            page_index=page,
+            total_pages=total_pages,
+        )
         if self._state.active_pua_code is not None:
             self._grid_pane.set_selected(self._state.active_pua_code)
+
+    def _pua_range_label(self, specs: list[CompositeSpec]) -> str | None:
+        """Return the consonant's PUA block label, or `None` when the map holds no slot for it.
+
+        Contiguous blocks render as a `U+lo-U+hi` span; relocated (scattered) slots
+        fall back to a slot count anchored at the lowest codepoint.
+        """
+        if not specs:
+            return None
+        codes = sorted(spec.pua_code for spec in specs)
+        lo, hi = codes[0], codes[-1]
+        if hi - lo + 1 == len(codes):
+            return f"U+{lo:04X}-U+{hi:04X}"
+        return f"U+{lo:04X}+{len(codes)} slot(s)"
 
     def _refresh_footer(self) -> None:
         """Re-render the title bar and footer: font path with dirty marker, and occupancy notice."""
