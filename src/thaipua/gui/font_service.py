@@ -84,6 +84,7 @@ class GlyphRender:
     cap_height: int
     x_height: int
     component_boxes: list[ComponentBox] = field(default_factory=list)
+    install_status: InstallStatus | None = None
 
 
 class FontService:
@@ -578,7 +579,11 @@ class FontService:
     def regenerate_composite(
         self, spec: CompositeSpec, settings: PlacementSettings, path: PathLike | None
     ) -> GlyphRender:
-        """Rebuild the composite at its PUA codepoint and render the current occupant."""
+        """Rebuild the composite at its PUA codepoint and render the current occupant.
+
+        The returned render carries `install_status` so callers can distinguish a
+        real install from a skip that left the slot untouched.
+        """
         if self._gen is None:
             raise RuntimeError("Cannot regenerate composites without a loaded font.")
         result = self._gen.install_composite(
@@ -592,9 +597,9 @@ class FontService:
         )
         logger.debug("Regenerated U+%04X: %s", spec.pua_code, result.status.value)
         self._state_version += 1
-        if path is None:
-            return self.render_glyph(spec.pua_code, _NullPath(), spec=spec)
-        return self.render_glyph(spec.pua_code, path, spec=spec)
+        render = self.render_glyph(spec.pua_code, path if path is not None else _NullPath(), spec=spec)
+        render.install_status = result.status
+        return render
 
     def regenerate_all(self, settings: PlacementSettings, pua_map: dict[str, str]) -> list[InstallResult]:
         """Rebuild every composite in the map, returning one result per spec."""

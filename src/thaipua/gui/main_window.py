@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from thaipua.core.file_codec import decode_files, encode_files
+from thaipua.core.fonttools.composer import InstallStatus
 from thaipua.core.fonttools.map_validation import IssueSeverity, PuaMapIssue
 from thaipua.core.fonttools.ownership import SlotOwnership
 from thaipua.core.fonttools.settings import (
@@ -72,6 +74,9 @@ PROFILE_FILTER = "Profile JSON (*.json);;All files (*.*)"
 TEXT_FILTER = "Text / string-table files (*.txt *.strings *.dlstrings *.ilstrings);;All files (*.*)"
 _SAVE_BLOCK_PREVIEW_LIMIT = 8
 """Maximum mapping issues listed in the save-blocked dialog before an ellipsis line."""
+
+_SKIP_INSTALL_STATUSES = frozenset({InstallStatus.SKIPPED_LOCKED, InstallStatus.SKIPPED_MISSING_CONSONANT})
+"""Install outcomes that leave the slot untouched, so the composite must not count as installed."""
 
 
 def _compress_runs(codepoints: list[int]) -> list[tuple[int, int]]:
@@ -406,7 +411,7 @@ class MainWindow(QMainWindow):
         else:
             self._service.clear_override(codepoint)
         logger.info("User %s the override for U+%04X", "approved" if approve else "revoked", codepoint)
-        self._refresh_after_resolutions(layout_changed=False)
+        self._refresh_after_resolutions(layout_changed=False, invalidated=(codepoint,))
 
     def _on_remap_requested(self, codepoint: int) -> None:
         """Open the mapping editor pre-filtered to the key occupying `codepoint`."""
@@ -454,16 +459,27 @@ class MainWindow(QMainWindow):
                 return thai_key
         return None
 
-    def _refresh_after_resolutions(self, *, layout_changed: bool) -> None:
-        """Propagate override/relocate resolutions into state and every dependent view."""
+    def _refresh_after_resolutions(self, *, layout_changed: bool, invalidated: Iterable[int] = ()) -> None:
+        """Propagate override/relocate resolutions into state and every dependent view.
+
+        `invalidated` lists codepoints whose approval changed; their cached
+        installed-generation entries drop so the active preview re-renders from a
+        fresh install attempt instead of painting the stale occupant.
+        """
         if layout_changed:
             self._state.pua_map = self._service.pua_map
             self._rebuild_pua_index()
+        touched = set(invalidated)
+        for codepoint in touched:
+            self._installed_generations.pop(codepoint, None)
         self._state.dirty = True
         self._refresh_footer()
         self._schedule_grid_refresh()
         if self._occupancy_dialog is not None:
             self._occupancy_dialog.refresh(self._build_occupancy_rows())
+        pua_code = self._state.active_pua_code
+        if pua_code is not None and pua_code in touched and pua_code in self._pua_index:
+            self._on_pua_clicked(pua_code)
 
     def _on_relocate_requested(self, codepoint: int) -> None:
         """Move the key mapped onto `codepoint` into the tail zone and refresh."""
@@ -486,7 +502,7 @@ class MainWindow(QMainWindow):
         ]
         if not targets or not self._service.override_slots(targets):
             return
-        self._refresh_after_resolutions(layout_changed=False)
+        self._refresh_after_resolutions(layout_changed=False, invalidated=targets)
 
     def _on_bulk_relocate(self) -> None:
         """Relocate every Thai key whose slot still conflicts with the font."""
@@ -710,7 +726,10 @@ class MainWindow(QMainWindow):
             return
         path = QPainterPath()
         render = self._service.regenerate_composite(spec, self._state.settings, path)
-        self._installed_generations[spec.pua_code] = self._settings_generation
+        if render.install_status is not None and render.install_status in _SKIP_INSTALL_STATUSES:
+            self._installed_generations.pop(spec.pua_code, None)
+        else:
+            self._installed_generations[spec.pua_code] = self._settings_generation
         self._preview_pane.set_metadata(spec.pua_code, render.glyph_name)
         self._preview_pane.set_render(render, path)
         if mark_dirty:
