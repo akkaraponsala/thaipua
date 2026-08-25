@@ -15,6 +15,9 @@ _MAX_WIDTH_PX = 420
 _AUTO_HIDE_MS = 10_000
 _WAKE_UP_MS = 300
 _RADIUS_PX = 6
+_SHADOW_REACH_PX = 5
+_SHADOW_DROP_PX = 3
+_SHADOW_ALPHA = 45
 
 
 class _TipWindow(QLabel):
@@ -30,17 +33,34 @@ class _TipWindow(QLabel):
         self.setTextFormat(Qt.TextFormat.PlainText)
         self.setWordWrap(True)
         self.setMaximumWidth(_MAX_WIDTH_PX)
-        self.setContentsMargins(8, 4, 8, 4)
+        # Asymmetric vertical padding: the drop bias shifts the shadow field downward.
+        self.setContentsMargins(
+            8 + _SHADOW_REACH_PX,
+            4 + _SHADOW_REACH_PX - _SHADOW_DROP_PX,
+            8 + _SHADOW_REACH_PX,
+            4 + _SHADOW_REACH_PX + _SHADOW_DROP_PX,
+        )
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        """Paint the palette-colored rounded box, then the label text on top."""
+        """Paint stacked shadow layers below the rounded box, then the label text on top."""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        reach = float(_SHADOW_REACH_PX)
+        drop = float(_SHADOW_DROP_PX)
+        # The window is the box inflated by the shadow field; painting outside bounds would clip.
+        box = QRectF(self.rect()).adjusted(reach + 0.5, reach - drop + 0.5, -reach - 0.5, -reach - drop - 0.5)
+        # Layered alpha rects approximate a blur; a QGraphicsDropShadowEffect is unreliable on
+        # translucent top-level windows.
+        painter.setPen(Qt.PenStyle.NoPen)
+        for k in range(_SHADOW_REACH_PX, 0, -1):
+            alpha = round(_SHADOW_ALPHA * (_SHADOW_REACH_PX + 1 - k) / _SHADOW_REACH_PX)
+            painter.setBrush(QColor(0, 0, 0, alpha))
+            spread = float(k)
+            ring = box.adjusted(-spread, -spread, spread, spread).translated(0.0, drop)
+            painter.drawRoundedRect(ring, _RADIUS_PX + k, _RADIUS_PX + k)
         palette = theme.get_palette()
         painter.setPen(QPen(QColor(palette.BORDER_TOOLTIP), 1.0))
         painter.setBrush(QColor(palette.BG_TOOLTIP))
-        # Half-pixel inset centers the 1px stroke inside every edge so border weight stays uniform.
-        box = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         painter.drawRoundedRect(box, _RADIUS_PX, _RADIUS_PX)
         super().paintEvent(event)
 
@@ -195,9 +215,9 @@ class AnchoredTooltipFilter(QObject):
         avail = widget.screen().availableGeometry()
         x = (top_left.x() + bottom_right.x()) // 2 - size.width() // 2
         x = max(avail.left() + _EDGE_MARGIN_PX, min(x, avail.right() - size.width() - _EDGE_MARGIN_PX))
-        y = bottom_right.y() + _GAP_PX
+        y = bottom_right.y() + _GAP_PX - _SHADOW_REACH_PX + _SHADOW_DROP_PX
         if y + size.height() > avail.bottom() - _EDGE_MARGIN_PX:
-            y = top_left.y() - size.height() - _GAP_PX
+            y = top_left.y() - size.height() - _GAP_PX + _SHADOW_REACH_PX + _SHADOW_DROP_PX
         y = max(avail.top() + _EDGE_MARGIN_PX, y)
         # Anchor rect (inflated) drives move-dismissal; cursor inside it keeps the tip up.
         self._anchor = QRect(top_left, bottom_right).adjusted(
