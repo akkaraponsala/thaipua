@@ -130,9 +130,7 @@ class ControlsPane(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-        header = QLabel("Controls", self)
-        header.setObjectName("PaneHeader")
-        outer.addWidget(header)
+        outer.addWidget(self._build_header_row())
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -145,11 +143,6 @@ class ControlsPane(QWidget):
         container_layout.addWidget(self._build_base_offsets_group())
         container_layout.addWidget(self._build_glyph_substitutions_group())
         container_layout.addWidget(self._build_snap_configs_group())
-        self._reset_btn = QPushButton("Reset Defaults", self)
-        self._reset_btn.setIcon(icons.icon("rotate-ccw"))
-        self._reset_btn.setToolTip("Reset Placement Defaults")
-        self._reset_btn.clicked.connect(self.reset_defaults_requested)
-        container_layout.addWidget(self._reset_btn)
         container_layout.addStretch(1)
         scroll.setWidget(container)
         outer.addWidget(scroll, 1)
@@ -166,6 +159,26 @@ class ControlsPane(QWidget):
         self.set_enabled(False)
         self.set_consonant_enabled(False)
         self.set_font_loaded(False)
+
+    def _build_header_row(self) -> QWidget:
+        """Build the pane header with the Reset Defaults action pinned top-right."""
+        row = QWidget(self)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 10, 0)
+        layout.setSpacing(0)
+        title = QLabel("Controls", self)
+        title.setObjectName("PaneHeader")
+        self._reset_btn = QPushButton(self)
+        self._reset_btn.setIcon(icons.icon("rotate-ccw"))
+        self._reset_btn.setIconSize(QSize(16, 16))
+        self._reset_btn.setFixedSize(26, 26)
+        self._reset_btn.setFlat(True)
+        self._reset_btn.setToolTip("Reset Placement Defaults")
+        self._reset_btn.clicked.connect(self.reset_defaults_requested)
+        layout.addWidget(title)
+        layout.addStretch(1)
+        layout.addWidget(self._reset_btn)
+        return row
 
     def _build_offset_group(self) -> QGroupBox:
         """Build the *Mark Offsets* group: X/Y sliders + category radios."""
