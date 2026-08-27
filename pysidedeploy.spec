@@ -20,7 +20,7 @@ icon = assets/images/logo.png
 # venv via uv run, local and CI); a hardcoded path breaks other machines.
 python_path =
 
-packages = Nuitka==4.0
+packages = Nuitka==4.1.1
 
 [qt]
 

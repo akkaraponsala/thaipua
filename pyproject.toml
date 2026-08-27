@@ -9,9 +9,9 @@ description = "Converts Thai text to PUA Unicode and builds composed fonts mappe
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "PySide6",
+    "darkdetect",
     "fonttools",
-    "pyqtdarktheme-fork",
+    "PySide6",
 ]
 
 [project.optional-dependencies]
@@ -20,7 +20,7 @@ dev = [
     "mypy",
     "pytest",
     "pytest-cov",
-    "nuitka",
+    "nuitka == 4.1.1",
     "imageio",
 ]
 
@@ -30,7 +30,7 @@ dev = [
     "mypy",
     "pytest",
     "pytest-cov",
-    "nuitka",
+    "nuitka == 4.1.1",
     "imageio",
 ]
 
@@ -53,6 +53,7 @@ default-groups = ["dev"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+exclude = ["src/qdarktheme"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -75,6 +76,12 @@ select = [
 
 [tool.ruff.lint.pep8-naming]
 extend-ignore-names = [
+    "_closePath",
+    "_curveToOne",
+    "_endPath",
+    "_lineTo",
+    "_moveTo",
+    "_qCurveToOne",
     "addComponent",
     "closeEvent",
     "closeSubpath",
@@ -83,7 +90,10 @@ extend-ignore-names = [
     "enterEvent",
     "eventFilter",
     "filterAcceptsRow",
+    "getBestCmap",
+    "glyphName",
     "headerData",
+    "isComposite",
     "leaveEvent",
     "lineTo",
     "mouseDoubleClickEvent",
@@ -93,32 +103,24 @@ extend-ignore-names = [
     "moveTo",
     "paintEvent",
     "quadTo",
+    "resizeEvent",
     "rowCount",
     "setData",
-    "resizeEvent",
     "wheelEvent",
-    "_closePath",
-    "_curveToOne",
-    "_endPath",
-    "_lineTo",
-    "_moveTo",
-    "_qCurveToOne",
-    "glyphName",
-    "isComposite",
-    "getBestCmap",
 ]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 disallow_untyped_defs = true
+exclude = ["src/qdarktheme"]
 
 [[tool.mypy.overrides]]
 module = [
     "PySide6.*",
+    "darkdetect.*",
     "fontTools.*",
     "qdarktheme.*",
-    "darkdetect.*",
 ]
 ignore_missing_imports = true
 
