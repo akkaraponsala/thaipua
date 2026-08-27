@@ -35,7 +35,7 @@ from thaipua.core import (
     write_string_table,
 )
 
-__version__ = "0.1.3"
+__version__ = "0.1.5"
 __all__ = [
     "ABOVE_VOWELS",
     "BELOW_VOWELS",
