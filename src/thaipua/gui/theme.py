@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-import qdarktheme
 from PySide6.QtWidgets import QApplication
 
+import qdarktheme
 from thaipua.core.paths import DEFAULT_CONFIG_PATH
 
 logger = logging.getLogger(__name__)
@@ -145,8 +145,9 @@ def _local_overrides(palette: Palette) -> str:
     """Build the app-scoped QSS block for object-name-tagged widgets.
 
     App-scoped overrides qdarktheme does not know about: the object-name-tagged labels
-    installed by the panes and the `QFrame#Divider` separator widget. Every unscoped
-    standard Qt widget stays on qdarktheme's defaults.
+    installed by the panes, the `QFrame#Divider` separator widget, and the
+    `CollapsibleSection` header/body card. Every unscoped standard Qt widget stays on
+    qdarktheme's defaults.
     """
     return f"""
 QLabel#PaneHeader {{
@@ -160,6 +161,17 @@ QLabel#Label {{ color: {palette.TEXT_SECONDARY}; }}
 QLabel#MetaValue {{ color: {palette.TEXT_PRIMARY}; font-family: "Consolas", monospace; }}
 
 QFrame#Divider {{ background-color: {palette.BORDER}; }}
+
+QToolButton#SectionToggle {{
+    background-color: transparent;
+    border: none;
+    color: {palette.TEXT_PRIMARY};
+    font-weight: bold;
+    text-align: left;
+    padding: 0px;
+}}
+QToolButton#SectionToggle:hover {{ color: {palette.ACCENT}; }}
+QLabel#SectionSummary {{ color: {palette.TEXT_SECONDARY}; }}
 """
 
 
@@ -182,7 +194,7 @@ def apply_theme(app: QApplication | None = None, mode: ThemeMode = DEFAULT_THEME
     palette = _palette_for(effective)
     _active_palette = palette
     _active_mode = mode
-    instance.setStyleSheet(qdarktheme.load_stylesheet(effective.value) + _local_overrides(palette))
+    instance.setStyleSheet(qdarktheme.load_stylesheet(effective.value) + _local_overrides(palette))  # type: ignore[attr-defined]
     return effective
 
 

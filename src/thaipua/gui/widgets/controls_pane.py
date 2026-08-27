@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -53,6 +52,7 @@ from thaipua.gui.state import (
     glyph_substitution_candidates,
     present_roles_for,
 )
+from thaipua.gui.widgets.collapsible_section import CollapsibleSection
 
 if TYPE_CHECKING:
     from thaipua.core.fonttools.alternates import GlyphSubstitution
@@ -100,6 +100,11 @@ class ControlsPane(QWidget):
     _radios: dict[MarkCategory, QRadioButton]
     _radio_group: QButtonGroup
     _axis_icons: list[tuple[IconName, QLabel]]
+    _mark_section: CollapsibleSection
+    _global_section: CollapsibleSection
+    _base_section: CollapsibleSection
+    _sub_section: CollapsibleSection
+    _snap_section: CollapsibleSection
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Lay out the *Controls* pane; controls start disabled until loaded."""
@@ -136,13 +141,12 @@ class ControlsPane(QWidget):
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         container = QWidget(scroll)
         container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(8)
-        container_layout.addWidget(self._build_offset_group())
-        container_layout.addWidget(self._build_global_mark_offsets_group())
-        container_layout.addWidget(self._build_base_offsets_group())
-        container_layout.addWidget(self._build_glyph_substitutions_group())
-        container_layout.addWidget(self._build_snap_configs_group())
+        container_layout.setContentsMargins(4, 4, 4, 4)
+        container_layout.setSpacing(4)
+        container_layout.addWidget(self._build_mark_offsets_section())
+        container_layout.addWidget(self._build_base_offsets_section())
+        container_layout.addWidget(self._build_glyph_substitutions_section())
+        container_layout.addWidget(self._build_snap_configs_section())
         container_layout.addStretch(1)
         scroll.setWidget(container)
         outer.addWidget(scroll, 1)
@@ -180,17 +184,21 @@ class ControlsPane(QWidget):
         layout.addWidget(self._reset_btn)
         return row
 
-    def _build_offset_group(self) -> QGroupBox:
-        """Build the *Mark Offsets* group: X/Y sliders + category radios."""
-        group = QGroupBox("Mark Offsets", self)
-        group_layout = QVBoxLayout(group)
-        group_layout.setContentsMargins(10, 16, 10, 10)
-        group_layout.setSpacing(10)
-        group_layout.addLayout(self._build_axis_row("axis-x", self._x_slider, self._x_spin))
-        group_layout.addLayout(self._build_axis_row("axis-y", self._y_slider, self._y_spin))
-        group_layout.addSpacing(4)
-        group_layout.addWidget(self._build_category_radios())
-        return group
+    def _build_mark_offsets_section(self) -> CollapsibleSection:
+        """Build the *Mark Offsets* collapsible, nesting the global table inside."""
+        section = CollapsibleSection("Mark Offsets", self)
+        content = QWidget(section)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addLayout(self._build_axis_row("axis-x", self._x_slider, self._x_spin))
+        layout.addLayout(self._build_axis_row("axis-y", self._y_slider, self._y_spin))
+        layout.addWidget(self._build_category_radios())
+        layout.addWidget(self._build_global_mark_section())
+        section.set_content(content)
+        section.set_expanded(True)
+        self._mark_section = section
+        return section
 
     def _build_axis_row(self, icon_name: IconName, slider: QSlider, spin: QSpinBox) -> QHBoxLayout:
         """Build a single *[AxisIcon | Slider | SpinBox]* axis row from existing widgets."""
@@ -248,49 +256,14 @@ class ControlsPane(QWidget):
         if checked:
             self.category_changed.emit(category)
 
-    def _build_base_offsets_group(self) -> QGroupBox:
-        """Build the Base Offsets group: one X/Y spin pair per placement role."""
-        group = QGroupBox("Base Offsets", self)
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(10, 16, 10, 10)
-        layout.setSpacing(6)
-        for role in BASE_OFFSET_ROLES:
-            row = QHBoxLayout()
-            row.setSpacing(6)
-            role_label = QLabel(_DEFAULT_ROLE_LABELS[role], self)
-            role_label.setMinimumWidth(90)
-            x_spin = QSpinBox(self)
-            y_spin = QSpinBox(self)
-            for spin in [x_spin, y_spin]:
-                spin.setRange(OFFSET_MIN, OFFSET_MAX)
-                spin.setValue(OFFSET_DEFAULT)
-                spin.setMinimumWidth(70)
-            row.addWidget(role_label)
-            row.addStretch(1)
-            axis_icons: list[tuple[IconName, QSpinBox]] = [("axis-x", x_spin), ("axis-y", y_spin)]
-            for icon_name, spin in axis_icons:
-                row.addWidget(self._axis_icon_label(icon_name))
-                row.addWidget(spin)
-            layout.addLayout(row)
-            self._base_offset_spins[role] = (x_spin, y_spin)
-            x_spin.valueChanged.connect(lambda _v, r=role: self._on_base_spin(r))
-            y_spin.valueChanged.connect(lambda _v, r=role: self._on_base_spin(r))
-        return group
-
-    def _on_base_spin(self, role: str) -> None:
-        """Emit the live `(x, y)` base-offset pair for `role`."""
-        x_spin, y_spin = self._base_offset_spins[role]
-        self.base_offset_changed.emit(role, x_spin.value(), y_spin.value())
-
-    def _build_global_mark_offsets_group(self) -> QGroupBox:
-        """Build the *Mark Offsets (Global)* group: one mark selector plus X/Y spins per role."""
-        group = QGroupBox("Mark Offsets (Global)", self)
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(10, 16, 10, 10)
-        layout.setSpacing(6)
+    def _build_global_mark_section(self) -> CollapsibleSection:
+        """Build the collapsible global-mark table nested in the Mark Offsets group."""
+        section = CollapsibleSection("Global (all consonants)", self)
+        content = QWidget(section)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
         for role in ROLES:
-            row = QHBoxLayout()
-            row.setSpacing(6)
             role_label = QLabel(_DEFAULT_ROLE_LABELS[role], self)
             role_label.setMinimumWidth(90)
             combo = QComboBox(self)
@@ -304,19 +277,32 @@ class ControlsPane(QWidget):
                 spin.setValue(OFFSET_DEFAULT)
                 spin.setMinimumWidth(70)
                 spin.setEnabled(False)
-            row.addWidget(role_label)
-            row.addWidget(combo, 1)
-            row.addWidget(self._axis_icon_label("axis-x"))
-            row.addWidget(x_spin)
-            row.addWidget(self._axis_icon_label("axis-y"))
-            row.addWidget(y_spin)
-            layout.addLayout(row)
+            top = QHBoxLayout()
+            top.setSpacing(6)
+            top.addWidget(role_label)
+            top.addWidget(combo, 1)
+            bottom = QHBoxLayout()
+            bottom.setSpacing(6)
+            indent = QWidget(self)
+            indent.setFixedWidth(90)
+            indent.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            bottom.addWidget(indent)
+            bottom.addWidget(self._axis_icon_label("axis-x"))
+            bottom.addWidget(x_spin)
+            bottom.addSpacing(8)
+            bottom.addWidget(self._axis_icon_label("axis-y"))
+            bottom.addWidget(y_spin)
+            bottom.addStretch(1)
+            layout.addLayout(top)
+            layout.addLayout(bottom)
             self._global_mark_combos[role] = combo
             self._global_mark_spins[role] = (x_spin, y_spin)
             combo.currentIndexChanged.connect(lambda _i, r=role: self._on_global_mark_selected(r))
             x_spin.valueChanged.connect(lambda _v, r=role: self._on_global_mark_spin(r))
             y_spin.valueChanged.connect(lambda _v, r=role: self._on_global_mark_spin(r))
-        return group
+        section.set_content(content)
+        self._global_section = section
+        return section
 
     def _on_global_mark_selected(self, role: str) -> None:
         """Load the newly selected mark's stored offset into its spins without emitting."""
@@ -347,6 +333,9 @@ class ControlsPane(QWidget):
     def load_global_marks(self, settings: PlacementSettings) -> None:
         """Refresh the global mark spins from `settings` without emitting; cache it for selector switches."""
         self._settings = settings
+        if hasattr(self, "_global_section"):
+            entry_count = sum(len(group) for group in settings.marks.values())
+            self._global_section.set_summary(f"{entry_count} set" if entry_count else None)
         for role, (x_spin, y_spin) in self._global_mark_spins.items():
             mark_uni = self._global_mark_combos[role].currentData()
             if mark_uni is None:
@@ -362,8 +351,11 @@ class ControlsPane(QWidget):
                 y_spin.blockSignals(False)
 
     def clear_global_marks(self) -> None:
-        """Reset the global mark selectors and spins, disabling them."""
+        """Reset the global mark selectors and spins, collapsing and disabling them."""
         self._settings = None
+        if hasattr(self, "_global_section"):
+            self._global_section.set_summary(None)
+            self._global_section.set_expanded(False)
         for role, combo in self._global_mark_combos.items():
             x_spin, y_spin = self._global_mark_spins[role]
             widgets: list[QComboBox | QSpinBox] = [combo, x_spin, y_spin]
@@ -379,12 +371,51 @@ class ControlsPane(QWidget):
                 for spin in [x_spin, y_spin]:
                     spin.setEnabled(False)
 
-    def _build_glyph_substitutions_group(self) -> QGroupBox:
-        """Build the Glyph Substitutions group: one read-only combo per substitution role."""
-        group = QGroupBox("Glyph Substitutions", self)
-        form = QFormLayout(group)
-        form.setContentsMargins(10, 16, 10, 10)
-        form.setSpacing(6)
+    def _build_base_offsets_section(self) -> CollapsibleSection:
+        """Build the Base Offsets collapsible: one X/Y spin pair per placement role."""
+        section = CollapsibleSection("Base Offsets", self)
+        content = QWidget(section)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        for role in BASE_OFFSET_ROLES:
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            role_label = QLabel(_DEFAULT_ROLE_LABELS[role], self)
+            role_label.setMinimumWidth(90)
+            x_spin = QSpinBox(self)
+            y_spin = QSpinBox(self)
+            for spin in [x_spin, y_spin]:
+                spin.setRange(OFFSET_MIN, OFFSET_MAX)
+                spin.setValue(OFFSET_DEFAULT)
+                spin.setMinimumWidth(70)
+            row.addWidget(role_label)
+            row.addStretch(1)
+            row.addWidget(self._axis_icon_label("axis-x"))
+            row.addWidget(x_spin)
+            row.addWidget(self._axis_icon_label("axis-y"))
+            row.addWidget(y_spin)
+            layout.addLayout(row)
+            self._base_offset_spins[role] = (x_spin, y_spin)
+            x_spin.valueChanged.connect(lambda _v, r=role: self._on_base_spin(r))
+            y_spin.valueChanged.connect(lambda _v, r=role: self._on_base_spin(r))
+        section.set_content(content)
+        section.set_expanded(True)
+        self._base_section = section
+        return section
+
+    def _on_base_spin(self, role: str) -> None:
+        """Emit the live `(x, y)` base-offset pair for `role`."""
+        x_spin, y_spin = self._base_offset_spins[role]
+        self.base_offset_changed.emit(role, x_spin.value(), y_spin.value())
+
+    def _build_glyph_substitutions_section(self) -> CollapsibleSection:
+        """Build the Glyph Substitutions collapsible: one read-only combo per substitution role."""
+        section = CollapsibleSection("Glyph Substitutions", self)
+        content = QWidget(section)
+        form = QFormLayout(content)
+        form.setContentsMargins(0, 0, 0, 0)
+        form.setSpacing(4)
         for role in GLYPH_SUBSTITUTION_ROLES:
             combo = QComboBox(self)
             combo.addItem(NO_OVERRIDE)
@@ -393,7 +424,10 @@ class ControlsPane(QWidget):
             self._sub_combos[role] = combo
             form.addRow(_SUB_ROLE_LABELS[role], combo)
             combo.currentIndexChanged.connect(lambda _i, r=role: self._on_sub_commit(r))
-        return group
+        section.set_content(content)
+        section.set_expanded(True)
+        self._sub_section = section
+        return section
 
     def _on_sub_commit(self, role: str) -> None:
         """Emit the staged glyph-substitution override for `role` (empty clears)."""
@@ -401,12 +435,13 @@ class ControlsPane(QWidget):
         glyph_name = "" if text == NO_OVERRIDE or not text else text
         self.glyph_substitution_changed.emit(role, glyph_name)
 
-    def _build_snap_configs_group(self) -> QGroupBox:
-        """Build the Snap Configs group: one checkbox plus gap spin per snap pair."""
-        group = QGroupBox("Snap Configs", self)
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(10, 16, 10, 10)
-        layout.setSpacing(6)
+    def _build_snap_configs_section(self) -> CollapsibleSection:
+        """Build the Snap Configs collapsible: one checkbox plus gap spin per snap pair."""
+        section = CollapsibleSection("Snap Configs", self)
+        content = QWidget(section)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
         for name in SNAPS:
             row = QHBoxLayout()
             row.setSpacing(8)
@@ -428,7 +463,10 @@ class ControlsPane(QWidget):
             self._snap_gaps[name] = spin
             chk.toggled.connect(lambda _c, n=name: self._on_snap_chk(n))
             spin.valueChanged.connect(lambda _v, n=name: self._on_snap_gap(n))
-        return group
+        section.set_content(content)
+        section.set_expanded(True)
+        self._snap_section = section
+        return section
 
     def _on_snap_chk(self, name: str) -> None:
         """Re-enable/disable `name`'s gap spin, then emit the live pair."""
@@ -660,6 +698,15 @@ class ControlsPane(QWidget):
         for icon_name, label in self._axis_icons:
             label.setPixmap(icons.icon(icon_name).pixmap(QSize(16, 16)))
         self._reset_btn.setIcon(icons.icon("rotate-ccw"))
+        for section in (
+            getattr(self, "_mark_section", None),
+            getattr(self, "_global_section", None),
+            getattr(self, "_base_section", None),
+            getattr(self, "_sub_section", None),
+            getattr(self, "_snap_section", None),
+        ):
+            if section is not None:
+                section.refresh_style()
 
     def _slider_spin_pairs_flat(self) -> tuple[QSlider | QSpinBox, ...]:
         """Return the slider/spin tuple used to block and restore signals in bulk."""
