@@ -49,6 +49,8 @@ class Palette:
     ICON_FG: str
     GLYPH_FILL: str
     GLYPH_PEN: str
+    ERROR: str
+    WARNING: str
 
 
 DARK_PALETTE: Palette = Palette(
@@ -70,6 +72,8 @@ DARK_PALETTE: Palette = Palette(
     ICON_FG="#E1E5E9",
     GLYPH_FILL="#FFFFFF",
     GLYPH_PEN="#F0F0F0",
+    ERROR="#BE3C3C",
+    WARNING="#D8A028",
 )
 LIGHT_PALETTE: Palette = Palette(
     BG_APP="#F8F9FA",
@@ -90,6 +94,8 @@ LIGHT_PALETTE: Palette = Palette(
     ICON_FG="#494D53",
     GLYPH_FILL="#202124",
     GLYPH_PEN="#3F4042",
+    ERROR="#C5221F",
+    WARNING="#B06000",
 )
 _active_palette: Palette = DARK_PALETTE
 _active_mode: ThemeMode = DEFAULT_THEME_MODE

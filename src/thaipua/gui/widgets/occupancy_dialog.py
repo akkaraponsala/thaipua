@@ -31,8 +31,14 @@ class OccupancyRow:
     overridden: bool
 
 
-_OWNERSHIP_COLORS = {SlotOwnership.LOCKED: "#BE3C3C", SlotOwnership.REPLACEABLE: "#D8A028"}
-"""Text color per ownership verdict shown inline in each row."""
+def _ownership_color(ownership: SlotOwnership) -> str:
+    """Return the verdict text color for `ownership` from the active palette."""
+    palette = theme.get_palette()
+    if ownership is SlotOwnership.LOCKED:
+        return palette.ERROR
+    if ownership is SlotOwnership.REPLACEABLE:
+        return palette.WARNING
+    return palette.TEXT_DIM
 
 
 class _Thumb(QWidget):
@@ -152,7 +158,7 @@ class OccupancyDialog(QDialog):
         layout.setContentsMargins(8, 4, 8, 4)
         occ = row.occupant
         layout.addWidget(_Thumb(row.path, host))
-        color = _OWNERSHIP_COLORS.get(occ.ownership, "#80868B")
+        color = _ownership_color(occ.ownership)
         info = QLabel(
             f"<b>U+{occ.codepoint:04X}</b> · {occ.glyph_name}"
             f"<br><small>{occ.detail} · <span style='color:{color}'>{occ.ownership.value}</span></small>",
@@ -178,6 +184,6 @@ class OccupancyDialog(QDialog):
             layout.addWidget(remap_btn)
         else:
             note = QLabel("(unmapped)", host)
-            note.setStyleSheet("color: #80868B; font-size: 8pt;")
+            note.setStyleSheet(f"color: {theme.get_palette().TEXT_DIM}; font-size: 8pt;")
             layout.addWidget(note)
         return host

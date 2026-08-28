@@ -136,7 +136,7 @@ class SettingsDialog(QDialog):
         row.addWidget(apply_btn)
         hint = f"Relocation zone starts at U+{tail_start:04X}" if tail_start is not None else ""
         self._hint_label = QLabel(hint, holder)
-        self._hint_label.setStyleSheet("color: #80868B; font-size: 8pt;")
+        self._hint_label.setStyleSheet(f"color: {theme.get_palette().TEXT_DIM}; font-size: 8pt;")
         row.addWidget(self._hint_label)
         row.addStretch(1)
         return holder
@@ -150,7 +150,7 @@ class SettingsDialog(QDialog):
         except ValueError:
             base = -1
         if not is_valid_base(base):
-            self._base_input.setStyleSheet("border: 1px solid #BE3C3C;")
+            self._base_input.setStyleSheet(f"border: 1px solid {theme.get_palette().ERROR};")
             return
         self._hint_label.setText(f"Relocation zone starts at U+{canonical_tail_start(base):04X}")
         if self._on_base_changed is not None:
