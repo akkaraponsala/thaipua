@@ -104,6 +104,7 @@ class MainWindow(QMainWindow):
         self._state = AppState()
         self._service = FontService()
         self._pua_index: dict[int, CompositeSpec] = {}
+        self._codepoint_keys: dict[int, str] = {}
         self._current_category: MarkCategory | None = None
         self._sub_catalog: dict[str, list[GlyphSubstitution]] = {}
         self._settings_generation = 0
@@ -456,10 +457,7 @@ class MainWindow(QMainWindow):
 
     def _key_for_codepoint(self, codepoint: int) -> str | None:
         """Return the Thai key currently mapped onto `codepoint`, or `None`."""
-        for thai_key, pua_char in self._state.pua_map.items():
-            if len(pua_char) == 1 and ord(pua_char) == codepoint:
-                return thai_key
-        return None
+        return self._codepoint_keys.get(codepoint)
 
     def _refresh_after_resolutions(self, *, layout_changed: bool, invalidated: Iterable[int] = ()) -> None:
         """Propagate override/relocate resolutions into state and every dependent view.
@@ -768,12 +766,13 @@ class MainWindow(QMainWindow):
         return self._pua_index.get(pua_code)
 
     def _rebuild_pua_index(self) -> None:
-        """Rebuild the `pua_code → CompositeSpec` index from `state.pua_map`."""
+        """Rebuild the `pua_code → CompositeSpec` index and codepoint→key map from `state.pua_map`."""
         index: dict[int, CompositeSpec] = {}
         for _cons_uni, specs in group_composites_by_consonant(self._state.pua_map).items():
             for spec in specs:
                 index[spec.pua_code] = spec
         self._pua_index = index
+        self._codepoint_keys = {ord(char): key for key, char in self._state.pua_map.items() if len(char) == 1}
 
     def _refresh_grid_pane(self) -> None:
         """Re-render the grid pane per the current view-state and pagination."""
