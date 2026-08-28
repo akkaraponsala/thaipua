@@ -358,7 +358,7 @@ class FontService:
         """Return the font's glyph name for `codepoint`, or `None` when unmapped."""
         if self._gen is None:
             return None
-        return self._gen._cmap.get(codepoint)
+        return self._gen.glyph_name_for(codepoint)
 
     def has_codepoint(self, codepoint: int) -> bool:
         """Return `True` when `codepoint` has an installed glyph in the font."""
@@ -414,7 +414,7 @@ class FontService:
                 x_height=0,
             )
         font = self._gen.font
-        glyph_name = self._gen._cmap.get(codepoint)
+        glyph_name = self._gen.glyph_name_for(codepoint)
         upem = _units_per_em(font)
         asc, desc, cap, xh = _font_metrics(font, upem)
         if glyph_name is None:
@@ -431,7 +431,7 @@ class FontService:
             )
         render_glyph_path(font, glyph_name, path)
         advance = self.advance_width_for(glyph_name)
-        bbox = self._gen.bbox.get_bounding_box(glyph_name)
+        bbox = self._gen.bounding_box(glyph_name)
         bbox_tuple = bbox.as_tuple() if bbox is not None else None
         return GlyphRender(
             codepoint=codepoint,
@@ -471,7 +471,7 @@ class FontService:
             roles.append(SUB_TONE_MARK)
         boxes = []
         for index, component in enumerate(components):
-            base = self._gen.bbox.get_bounding_box(component.glyphName)
+            base = self._gen.bounding_box(component.glyphName)
             if base is None:
                 continue
             _name, (xx, xy, yx, yy, dx, dy) = component.getComponentInfo()
@@ -516,7 +516,7 @@ class FontService:
             roles.append(SUB_TONE_MARK)
         boxes = []
         for index, placement in enumerate(placements):
-            base = self._gen.bbox.get_bounding_box(placement.glyph_name)
+            base = self._gen.bounding_box(placement.glyph_name)
             if base is None:
                 continue
             role = roles[index] if index < len(roles) else roles[-1]
