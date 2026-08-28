@@ -1,4 +1,4 @@
-"""Unit tests for `ConsonantSettings.offset_for` tier resolution and substitution matching."""
+"""Unit tests for placement-offset tier resolution and substitution matching."""
 
 from __future__ import annotations
 
@@ -35,12 +35,20 @@ VOWEL_SARA_AA = 0x0E32
 VOWEL_MAI_HAN_AKAT = 0x0E31
 
 
+def _resolve(
+    cs: ConsonantSettings, role: str, *, mark_uni: int, combo_key: str | None, base_role: str | None = None
+) -> Offset:
+    """Resolve `cs` through `PlacementSettings.mark_offset_for` with an empty global tier."""
+    settings = PlacementSettings(consonants={CONSONANT_KO_KAI: cs})
+    return settings.mark_offset_for(CONSONANT_KO_KAI, role, mark_uni=mark_uni, combo_key=combo_key, base_role=base_role)
+
+
 def test_mark_offset_adds_to_base_offset() -> None:
     cs = ConsonantSettings(
         base_offsets={ROLE_TONE_MARK: Offset(-150, 10)},
         mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-1, 2)}},
     )
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(-151, 12)
+    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(-151, 12)
 
 
 def test_combo_offset_adds_to_base_offset() -> None:
@@ -48,7 +56,7 @@ def test_combo_offset_adds_to_base_offset() -> None:
         base_offsets={ROLE_TONE_MARK: Offset(0, -20)},
         combo_offsets={f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}": {ROLE_TONE_MARK: Offset(5, 3)}},
     )
-    off = cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}")
+    off = _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}")
     assert off == Offset(5, -17)
 
 
@@ -60,23 +68,23 @@ def test_tone_on_above_vowel_resolves_stacked_base_role() -> None:
         },
         mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-1, 0)}},
     )
-    off = cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None, base_role=ROLE_TONE_MARK_ON_ABOVE_VOWEL)
+    off = _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None, base_role=ROLE_TONE_MARK_ON_ABOVE_VOWEL)
     assert off == Offset(-151, 0)
 
 
 def test_base_role_falls_back_to_role() -> None:
     cs = ConsonantSettings(base_offsets={ROLE_TONE_MARK: Offset(-10, 0)})
-    off = cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None, base_role=ROLE_TONE_MARK_ON_ABOVE_VOWEL)
+    off = _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None, base_role=ROLE_TONE_MARK_ON_ABOVE_VOWEL)
     assert off == Offset(-10, 0)
 
 
 def test_mark_offset_without_base_tier() -> None:
     cs = ConsonantSettings(mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(-1, 0)}})
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(-1, 0)
+    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(-1, 0)
 
 
 def test_no_tiers_yields_zero() -> None:
-    assert ConsonantSettings().offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
+    assert _resolve(ConsonantSettings(), ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
 
 
 def test_canonicalize_tone_mark_context_merges_below_family_with_tone_only() -> None:
@@ -584,7 +592,7 @@ def test_load_fractional_offset_coerces_to_zero(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     cs = load_placement_settings(path).for_consonant(0x0E1B)
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
+    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
 
 
 def test_combo_cluster_resolves_from_combo_tier() -> None:
@@ -593,14 +601,14 @@ def test_combo_cluster_resolves_from_combo_tier() -> None:
         mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
         combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
     )
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(5, -5)
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(10, 20)
+    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(5, -5)
+    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(10, 20)
 
 
 def test_combo_cluster_without_entry_resolves_to_zero() -> None:
     combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
     cs = ConsonantSettings(mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}})
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset()
+    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset()
 
 
 def test_combo_and_base_offsets_stack() -> None:
@@ -610,8 +618,8 @@ def test_combo_and_base_offsets_stack() -> None:
         mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
         combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
     )
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(6, -4)
-    assert cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(11, 21)
+    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key) == Offset(6, -4)
+    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset(11, 21)
 
 
 def test_state_single_and_combo_offsets_are_independent() -> None:
@@ -627,12 +635,11 @@ def test_state_single_and_combo_offsets_are_independent() -> None:
     apply_offset(spec_base, settings, 10, 20, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(10, 20)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
-    cs = settings.for_consonant(cons)
-    assert cs.offset_for(ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}") == Offset()
+    combo_key = f"{chr(above)}{chr(tone)}"
+    assert settings.mark_offset_for(cons, ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=combo_key) == Offset()
     apply_offset(spec_combo, settings, 5, -5, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
-    cs2 = settings.for_consonant(cons)
-    assert cs2.offset_for(ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=f"{chr(above)}{chr(tone)}") == Offset(5, -5)
+    assert settings.mark_offset_for(cons, ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=combo_key) == Offset(5, -5)
     apply_offset(spec_base, settings, 0, 0, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
@@ -672,18 +679,21 @@ def test_global_mark_offset_applies_under_combo_tier() -> None:
     assert off == Offset(-35, 5)
 
 
-def test_mark_offset_for_without_global_entry_matches_consonant_resolution() -> None:
+def test_mark_offset_for_without_global_entry_resolves_consonant_tiers() -> None:
     combo_key = f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
-    cs = ConsonantSettings(
-        base_offsets={ROLE_TONE_MARK: Offset(1, 1)},
-        mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
-        combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
+    settings = PlacementSettings(
+        consonants={
+            CONSONANT_KO_KAI: ConsonantSettings(
+                base_offsets={ROLE_TONE_MARK: Offset(1, 1)},
+                mark_offsets={ROLE_TONE_MARK: {TONE_MAI_EK: Offset(10, 20)}},
+                combo_offsets={combo_key: {ROLE_TONE_MARK: Offset(5, -5)}},
+            )
+        }
     )
-    settings = PlacementSettings(consonants={CONSONANT_KO_KAI: cs})
     single = settings.mark_offset_for(CONSONANT_KO_KAI, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None)
     combo = settings.mark_offset_for(CONSONANT_KO_KAI, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key)
-    assert single == cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None)
-    assert combo == cs.offset_for(ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=combo_key)
+    assert single == Offset(11, 21)
+    assert combo == Offset(6, -4)
 
 
 def test_global_mark_offset_is_scoped_to_its_role() -> None:

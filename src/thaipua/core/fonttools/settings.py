@@ -97,18 +97,6 @@ class ConsonantSettings:
     snap_configs: dict[str, SnapConfig] = field(default_factory=dict)
     glyph_substitutions: dict[int, list[SubstitutionRule]] = field(default_factory=dict)
 
-    def offset_for(
-        self, role: str, *, mark_uni: int | None, combo_key: str | None, base_role: str | None = None
-    ) -> Offset:
-        """Combine the per-glyph override with the base offset for `role`.
-
-        Multi-mark clusters read the combo tier; single-mark clusters read the mark
-        tier. `base_role` substitutes the base tier when provided.
-        """
-        specific = self._per_glyph_offset(role, mark_uni=mark_uni, combo_key=combo_key)
-        base_key = base_role if base_role is not None and base_role in self.base_offsets else role
-        return specific + self.base_offsets.get(base_key, Offset())
-
     def _per_glyph_offset(self, role: str, *, mark_uni: int | None, combo_key: str | None) -> Offset:
         """Return the per-glyph tier for `role`: the combo tier for multi-mark clusters, otherwise the mark tier."""
         if combo_key is not None:
@@ -167,8 +155,8 @@ class PlacementSettings:
         """Combine the per-consonant tier with the font-global mark offset and the base tier.
 
         The global `marks` entry applies to every composite carrying `mark_uni`,
-        including multi-mark clusters resolved through the combo tier; the base-tier
-        fallback follows `ConsonantSettings.offset_for`.
+        including multi-mark clusters resolved through the combo tier; the base tier
+        falls back to `role` when `base_role` is unset.
         """
         cons = self.for_consonant(cons_uni)
         specific = cons._per_glyph_offset(role, mark_uni=mark_uni, combo_key=combo_key)
