@@ -328,7 +328,7 @@ def test_save_font_writes_no_profile_file(tmp_path: Path, monkeypatch: pytest.Mo
     service.load_font(SAMPLE_FONT_PATH, profiles_dir=profiles_dir)
     pua_map = service.load_layout()
     assert service.generator is not None
-    monkeypatch.setattr(service, "regenerate_all", lambda settings, mapping: [])
+    monkeypatch.setattr(service, "regenerate_all", lambda settings, mapping, progress=None: [])
 
     def boom(settings: Any, path: Any) -> None:
         raise AssertionError("save_font must not persist a profile")

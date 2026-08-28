@@ -11,10 +11,12 @@ from fontTools.ttLib import TTLibError
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent, QPainterPath
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFileDialog,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -179,12 +181,20 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "Open Font", "", FONT_FILTER)
         if not path:
             return
+        progress = QProgressDialog("Loading font…", "", 0, 0, self)
+        progress.setWindowTitle("Open Font")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
         try:
             self._service.load_font(path, profiles_dir=DEFAULT_PROFILES_DIR)
         except (TTLibError, OSError) as exc:
+            progress.close()
             logger.exception("Failed to open font %s", path)
             QMessageBox.critical(self, "Open Font", f"Could not open font:\n{exc}")
             return
+        progress.close()
         self._state.font_path = path
         self._state.pua_map = self._service.load_layout()
         self._sub_catalog = self._service.find_substitutions()
@@ -223,12 +233,28 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Save Font", default, FONT_FILTER)
         if not path:
             return
+        progress = QProgressDialog("Rebuilding composite glyphs…", "", 0, 0, self)
+        progress.setWindowTitle("Save Font")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
+
+        def on_progress(done: int, total: int) -> None:
+            progress.setRange(0, total)
+            progress.setValue(done)
+            QApplication.processEvents()
+
         try:
-            self._service.save_font(path, self._state.settings, self._state.pua_map)
+            self._service.save_font(path, self._state.settings, self._state.pua_map, progress=on_progress)
         except (TTLibError, OSError) as exc:
+            progress.close()
             logger.exception("Failed to save font to %s", path)
             QMessageBox.critical(self, "Save Font", f"Could not save font:\n{exc}")
             return None
+        progress.setValue(progress.maximum())
+        progress.close()
         self._installed_generations = {pua: self._settings_generation for pua in self._pua_index}
         self._state.dirty = False
         self._refresh_footer()
