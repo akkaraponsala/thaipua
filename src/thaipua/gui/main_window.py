@@ -584,6 +584,7 @@ class MainWindow(QMainWindow):
         """Transition the grid into the PUA page for `cons_uni`; no-op without a loaded font."""
         if not self._service.is_loaded:
             return
+        self._controls_pane.flush_offset_commit()
         self._state.active_consonant_uni = cons_uni
         self._state.pua_page = 0
         self._state.active_pua_code = None
@@ -594,6 +595,7 @@ class MainWindow(QMainWindow):
 
     def _on_pua_clicked(self, pua_code: int) -> None:
         """Mark `pua_code` selected and load its preview and controls."""
+        self._controls_pane.flush_offset_commit()
         self._state.active_pua_code = pua_code
         spec = self._pua_index.get(pua_code)
         if spec is None:
@@ -619,6 +621,7 @@ class MainWindow(QMainWindow):
 
     def _on_back_to_consonants(self) -> None:
         """Reset to the consonant index page."""
+        self._controls_pane.flush_offset_commit()
         self._state.active_consonant_uni = None
         self._state.active_pua_code = None
         self._state.pua_page = 0
@@ -738,6 +741,7 @@ class MainWindow(QMainWindow):
         spec = self._active_spec()
         if spec is None or not isinstance(category, MarkCategory):
             return None
+        self._controls_pane.flush_offset_commit()
         self._current_category = category
         offset = current_mark_offset(spec, self._state.settings, category=category)
         self._controls_pane.load_offset(offset.x, offset.y, category)
