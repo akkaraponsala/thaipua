@@ -101,6 +101,14 @@ class ThaiPuaFontGenerator:
             return None
         return self._cmap.get(unicode_point) or f"uni{unicode_point:04X}"
 
+    def glyph_name_for(self, codepoint: int) -> str | None:
+        """Return the raw cmap glyph name for `codepoint`, or `None` when unmapped."""
+        return self._cmap.get(codepoint)
+
+    def bounding_box(self, glyph_name: str) -> BoundingBox | None:
+        """Return the cached bounding box for `glyph_name`, or `None` when unavailable."""
+        return self.bbox.get_bounding_box(glyph_name)
+
     @staticmethod
     def _combo_key(below_uni: int | None, above_uni: int | None, tone_uni: int | None) -> str | None:
         """Return the canonical combination key for a multi-mark cluster, or `None` for single marks."""
