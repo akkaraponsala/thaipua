@@ -60,6 +60,15 @@ from thaipua.gui.glyph_pen import PathLike, render_glyph_path, render_placed_com
 
 logger = logging.getLogger(__name__)
 
+_OCCUPANCY_VISIBLE_STATUSES: frozenset[InstallStatus] = frozenset(
+    {
+        InstallStatus.INSTALLED,
+        InstallStatus.REPLACED_FOREIGN_COMPOSITE,
+        InstallStatus.OVERRIDDEN_LOCKED,
+    }
+)
+"""Install outcomes that change what occupies a PUA slot, invalidating occupancy caches."""
+
 
 @dataclass(slots=True, frozen=True)
 class ComponentBox:
@@ -583,7 +592,9 @@ class FontService:
         """Rebuild the composite at its PUA codepoint and render the current occupant.
 
         The returned render carries `install_status` so callers can distinguish a
-        real install from a skip that left the slot untouched.
+        real install from a skip that left the slot untouched. The state version only
+        moves when occupancy-visible state changed; reinstalling an owned slot or a
+        skip leaves caches keyed on it valid.
         """
         if self._gen is None:
             raise RuntimeError("Cannot regenerate composites without a loaded font.")
@@ -597,7 +608,8 @@ class FontService:
             allowed_locked=self.allowed_locked(),
         )
         logger.debug("Regenerated U+%04X: %s", spec.pua_code, result.status.value)
-        self._state_version += 1
+        if result.status in _OCCUPANCY_VISIBLE_STATUSES:
+            self._state_version += 1
         render = self.render_glyph(spec.pua_code, path if path is not None else _NullPath(), spec=spec)
         render.install_status = result.status
         return render
