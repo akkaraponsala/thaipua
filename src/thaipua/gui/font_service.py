@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -614,34 +614,54 @@ class FontService:
         render.install_status = result.status
         return render
 
-    def regenerate_all(self, settings: PlacementSettings, pua_map: dict[str, str]) -> list[InstallResult]:
-        """Rebuild every composite in the map, returning one result per spec."""
+    def regenerate_all(
+        self,
+        settings: PlacementSettings,
+        pua_map: dict[str, str],
+        progress: Callable[[int, int], None] | None = None,
+    ) -> list[InstallResult]:
+        """Rebuild every composite in the map, returning one result per spec.
+
+        `progress(done, total)` is invoked after each install so a GUI can update
+        a progress indicator during a full rebuild.
+        """
         if self._gen is None:
             raise RuntimeError("Cannot regenerate composites without a loaded font.")
         allowed = self.allowed_locked()
-        results = [
-            self._gen.install_composite(
-                spec.pua_code,
-                spec.cons_uni,
-                spec.below_uni,
-                spec.above_uni,
-                spec.tone_uni,
-                settings=settings,
-                allowed_locked=allowed,
+        specs = list(iter_composite_specs(pua_map))
+        total = len(specs)
+        results: list[InstallResult] = []
+        for index, spec in enumerate(specs):
+            results.append(
+                self._gen.install_composite(
+                    spec.pua_code,
+                    spec.cons_uni,
+                    spec.below_uni,
+                    spec.above_uni,
+                    spec.tone_uni,
+                    settings=settings,
+                    allowed_locked=allowed,
+                )
             )
-            for spec in iter_composite_specs(pua_map)
-        ]
+            if progress is not None:
+                progress(index + 1, total)
         self._state_version += 1
         return results
 
-    def save_font(self, output_path: str | Path | None, settings: PlacementSettings, pua_map: dict[str, str]) -> str:
+    def save_font(
+        self,
+        output_path: str | Path | None,
+        settings: PlacementSettings,
+        pua_map: dict[str, str],
+        progress: Callable[[int, int], None] | None = None,
+    ) -> str:
         """Rebuild all composites and write the font to `output_path`."""
         if self._gen is None:
             raise RuntimeError("Cannot save: no font loaded.")
         target = str(output_path) if output_path is not None else self._output_path
         if target is None:
             raise RuntimeError("Cannot save: no output path available.")
-        results = self.regenerate_all(settings, pua_map)
+        results = self.regenerate_all(settings, pua_map, progress=progress)
         locked = sum(1 for result in results if result.status is InstallStatus.SKIPPED_LOCKED)
         if locked:
             logger.warning("Saved font keeps %d locked PUA slot(s) untouched (unrecognized content)", locked)
