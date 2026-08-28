@@ -44,8 +44,11 @@ def _write_string_table_file(entries_from_src: list[StringEntry], output_path: s
         write_string_table(entries_from_src, output_path, encoding="utf-8")
 
 
-def _transform_text_file(input_path: Path, output_path: Path, transform_text: Callable[[str], str]) -> None:
-    """Transform a plain-text file in its detected encoding, falling back to UTF-8 on write failure."""
+def _transform_text_file(input_path: Path, output_path: Path, transform_text: Callable[[str], str]) -> bool:
+    """Transform a plain-text file in its detected encoding, falling back to UTF-8 on write failure.
+
+    Return whether an output file was written.
+    """
     encoding = detect_text_encoding(input_path)
     logger.info("Processing file: '%s' (%s)", input_path, encoding)
     try:
@@ -53,7 +56,7 @@ def _transform_text_file(input_path: Path, output_path: Path, transform_text: Ca
         transformed = transform_text(content)
     except (OSError, UnicodeDecodeError):
         logger.exception("Failed to process '%s'", input_path)
-        return
+        return False
     try:
         output_path.write_text(transformed, encoding=encoding)
     except UnicodeEncodeError:
@@ -65,8 +68,10 @@ def _transform_text_file(input_path: Path, output_path: Path, transform_text: Ca
         output_path.write_text(transformed, encoding="utf-8")
     except OSError:
         logger.exception("Failed to write '%s'", output_path)
+        return False
     else:
         logger.info("File written: '%s'", output_path)
+    return True
 
 
 def _route_files(
@@ -75,15 +80,18 @@ def _route_files(
     output_suffix: str,
     string_table_handler: Callable[[Path, Path], None],
     transform_text: Callable[[str], str],
-) -> None:
+) -> tuple[int, int]:
     """Route each target file to the matching handler, writing `<stem>_<suffix><ext>` outputs.
 
-    Missing files are skipped with a warning.
+    Return `(written, failed)`; missing and unreadable files count as failed.
     """
+    written = 0
+    failed = 0
     for target_path in target_files:
         input_path = Path(target_path)
         if not input_path.exists():
             logger.warning("Skipping missing file: '%s'", input_path)
+            failed += 1
             continue
         output_path = input_path.with_name(f"{input_path.stem}_{output_suffix}{input_path.suffix}")
         if input_path.suffix.upper() in STRING_TABLE_EXTENSIONS:
@@ -92,22 +100,27 @@ def _route_files(
                 string_table_handler(input_path, output_path)
             except (OSError, StringTableError):
                 logger.exception("Failed to process '%s'", input_path)
+                failed += 1
             else:
                 logger.info("File written: '%s'", output_path)
+                written += 1
+        elif _transform_text_file(input_path, output_path, transform_text):
+            written += 1
         else:
-            _transform_text_file(input_path, output_path, transform_text)
+            failed += 1
+    return written, failed
 
 
-def encode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
+def encode_files(map_path: str | Path, target_files: list[str | Path]) -> tuple[int, int]:
     """Encode Thai text in each target file to PUA codepoints.
 
-    Return without writing when the mapping at `map_path` cannot be loaded.
+    Return `(written, failed)`; `(0, len(target_files))` when the mapping cannot load.
     """
     encoding_map = load_encoding_map(map_path)
     if encoding_map is None:
-        return
+        return (0, len(target_files))
     transform_text = build_encode_transform(encoding_map)
-    _route_files(
+    return _route_files(
         target_files,
         output_suffix="encoded",
         string_table_handler=partial(_encode_string_table_file, transform_text=transform_text),
@@ -115,15 +128,15 @@ def encode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
     )
 
 
-def decode_files(map_path: str | Path, target_files: list[str | Path]) -> None:
+def decode_files(map_path: str | Path, target_files: list[str | Path]) -> tuple[int, int]:
     """Decode PUA codepoints in each target file back to Thai text.
 
-    Return without writing when the mapping at `map_path` cannot be loaded.
+    Return `(written, failed)`; `(0, len(target_files))` when the mapping cannot load.
     """
     decode_table = load_decode_table(map_path)
     if decode_table is None:
-        return
-    _route_files(
+        return (0, len(target_files))
+    return _route_files(
         target_files,
         output_suffix="decoded",
         string_table_handler=partial(_decode_string_table_file, decode_table=decode_table),

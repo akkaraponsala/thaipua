@@ -35,7 +35,6 @@ from thaipua.core.fonttools.settings import (
 from thaipua.core.fonttools.specs import CompositeSpec
 from thaipua.core.layout import LayoutConflict
 from thaipua.core.paths import DEFAULT_PROFILES_DIR
-from thaipua.core.string_table import StringTableError
 from thaipua.gui import icons, theme
 from thaipua.gui.font_service import FontService
 from thaipua.gui.state import (
@@ -311,13 +310,8 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, "Decode PUA → Thai", "", TEXT_FILTER)
         if not paths:
             return
-        try:
-            decode_files(self._service.pua_map_path, [Path(p) for p in paths])
-        except (OSError, StringTableError) as exc:
-            logger.exception("PUA decode failed")
-            QMessageBox.critical(self, "Decode PUA → Thai", f"Decode failed:\n{exc}")
-            return None
-        QMessageBox.information(self, "Decode PUA → Thai", f"Decoded {len(paths)} file(s).")
+        written, failed = decode_files(self._service.pua_map_path, [Path(p) for p in paths])
+        self._report_file_codec("Decode PUA → Thai", "Decoded", written, failed)
 
     def _on_encode_thai(self) -> None:
         """Pick text/string-table files and encode their Thai text to PUA codepoints."""
@@ -326,13 +320,19 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, "Encode Thai → PUA", "", TEXT_FILTER)
         if not paths:
             return
-        try:
-            encode_files(self._service.pua_map_path, [Path(p) for p in paths])
-        except (OSError, StringTableError) as exc:
-            logger.exception("PUA encode failed")
-            QMessageBox.critical(self, "Encode Thai → PUA", f"Encode failed:\n{exc}")
-            return None
-        QMessageBox.information(self, "Encode Thai → PUA", f"Encoded {len(paths)} file(s).")
+        written, failed = encode_files(self._service.pua_map_path, [Path(p) for p in paths])
+        self._report_file_codec("Encode Thai → PUA", "Encoded", written, failed)
+
+    def _report_file_codec(self, title: str, verb: str, written: int, failed: int) -> None:
+        """Surface an honest encode/decode outcome, warning when any file failed."""
+        if failed:
+            QMessageBox.warning(
+                self,
+                title,
+                f"{verb} {written} file(s); {failed} file(s) failed. See the log for details.",
+            )
+        else:
+            QMessageBox.information(self, title, f"{verb} {written} file(s).")
 
     def _on_find_substitution(self) -> None:
         """Open the GSUB catalog dialog populated from the live font."""
