@@ -191,7 +191,8 @@ class FontService:
     def load_font(
         self, path: str | Path, settings: PlacementSettings | None = None, profiles_dir: str | Path | None = None
     ) -> None:
-        """Open a font for editing with `settings`, or in-code defaults when omitted."""
+        """Open a font for editing with `settings`, closing any previously loaded font first."""
+        self.close()
         src = Path(path)
         self._profiles_dir = str(profiles_dir) if profiles_dir is not None else DEFAULT_PROFILES_DIR
         self._gen = ThaiPuaFontGenerator(str(src), settings if settings is not None else default_placement_settings())
@@ -663,7 +664,11 @@ class FontService:
         return find_glyph_substitutions(self._gen.font)
 
     def close(self) -> None:
-        """Close the underlying `TTFont` if one is open; safe to call repeatedly."""
+        """Close the underlying `TTFont` if one is open; safe to call repeatedly.
+
+        Only font ownership is released — the layout and PUA-map configuration,
+        which are independent of the loaded font, are left in place.
+        """
         if self._gen is not None and self._gen.font is not None:
             try:
                 self._gen.font.close()
@@ -673,8 +678,6 @@ class FontService:
         self._src_path = None
         self._output_path = None
         self._profiles_dir = DEFAULT_PROFILES_DIR
-        self._layout_path = DEFAULT_LAYOUT_PATH
-        self._layout = None
         self._state_version += 1
 
 

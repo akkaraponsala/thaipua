@@ -881,6 +881,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Prompt to save unsaved edits before closing; allow cancel via the prompt."""
         if not self._state.dirty:
+            self._service.close()
             super().closeEvent(event)
             return
         reply = QMessageBox.question(
@@ -893,4 +894,5 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Cancel:
             event.ignore()
         else:
+            self._service.close()
             super().closeEvent(event)
