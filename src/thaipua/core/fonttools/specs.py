@@ -38,12 +38,16 @@ class CompositeSpec:
 def decompose_thai_cluster(thai_text: str) -> tuple[int, int | None, int | None, int | None] | None:
     """Split a Thai cluster into `(cons_uni, below_uni, above_uni, tone_uni)`.
 
-    Return `None` when the text is empty or contains an unrecognized codepoint.
+    Return `None` when the text is empty, does not start with a Thai consonant,
+    or contains an unrecognized mark.
     """
     if not thai_text:
         return None
     codes = [ord(ch) for ch in thai_text]
     cons_uni = codes[0]
+    if cons_uni not in THAI_CONSONANTS:
+        logger.warning("Cannot decompose Thai cluster %r: U+%04X is not a Thai consonant", thai_text, cons_uni)
+        return None
     below_uni = None
     above_uni = None
     tone_uni = None
