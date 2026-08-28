@@ -201,9 +201,7 @@ class MainWindow(QMainWindow):
         self._rebuild_pua_index()
         self._settings_generation = 0
         self._installed_generations = {}
-        generator = self._service.generator
-        if generator is not None:
-            self._state.settings = generator.settings
+        self._state.settings = default_placement_settings()
         self._state.active_consonant_uni = None
         self._state.active_pua_code = None
         self._state.consonants_page = 0
@@ -767,6 +765,8 @@ class MainWindow(QMainWindow):
             return
         path = QPainterPath()
         render = self._service.regenerate_composite(spec, self._state.settings, path)
+        if render.install_status is InstallStatus.REPLACED_FOREIGN_COMPOSITE:
+            logger.warning("U+%04X replaced a foreign composite in place", spec.pua_code)
         if render.install_status is not None and render.install_status in _SKIP_INSTALL_STATUSES:
             self._installed_generations.pop(spec.pua_code, None)
         else:
