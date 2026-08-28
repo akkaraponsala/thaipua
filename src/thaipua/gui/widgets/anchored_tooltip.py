@@ -235,4 +235,4 @@ def install_anchored_tooltips(app: QApplication) -> None:
     global _filter
     if _filter is None:
         _filter = AnchoredTooltipFilter(app)
-    _filter.attach(app)
+        _filter.attach(app)

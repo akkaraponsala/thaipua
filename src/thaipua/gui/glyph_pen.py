@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 from fontTools.pens.basePen import BasePen
+from fontTools.pens.transformPen import TransformPen
 
 if TYPE_CHECKING:
     from fontTools.ttLib import TTFont
@@ -67,8 +68,6 @@ class QPainterPathPen(BasePen):  # type: ignore[misc]
         """Draw a nested component with its transform applied."""
         if self.glyphSet is None:
             return
-        from fontTools.pens.transformPen import TransformPen
-
         sub_pen = TransformPen(self, transform)
         self.glyphSet[glyphName].draw(sub_pen)
 
@@ -100,6 +99,4 @@ def render_placed_components(
     for glyph_name, transform in components:
         if glyph_name is None or glyph_name not in font.getGlyphOrder():
             continue
-        from fontTools.pens.transformPen import TransformPen
-
         gs[glyph_name].draw(TransformPen(pen, transform))
