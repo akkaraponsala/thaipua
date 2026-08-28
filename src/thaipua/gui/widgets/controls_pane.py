@@ -235,6 +235,13 @@ class ControlsPane(QWidget):
         self._offset_pending = False
         self.offset_changed.emit(self._x_spin.value(), self._y_spin.value())
 
+    def flush_offset_commit(self) -> None:
+        """Emit a pending throttled commit immediately, canceling the throttle timer."""
+        if not self._offset_pending:
+            return
+        self._commit_timer.stop()
+        self._emit_offset_commit()
+
     def _build_category_radios(self) -> QWidget:
         """Build the four spec-grouped radio buttons as a `QButtonGroup`."""
         holder = QWidget(self)
