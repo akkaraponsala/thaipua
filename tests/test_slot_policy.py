@@ -75,6 +75,6 @@ def test_resolve_pins_in_range_and_rejects_out_of_range() -> None:
     cluster = try_key("ก่")
     assert cluster is not None
     pinned = resolve(fresh_engine(), RelocatePin(cluster=cluster, codepoint=0xE900))
-    assert pinned.map[cluster] == 0xE900
+    assert pinned.map["ก่"] == 0xE900
     with pytest.raises(LayoutError):
         resolve(fresh_engine(), RelocatePin(cluster=cluster, codepoint=0x1000))

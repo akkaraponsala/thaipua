@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from thaipua.core.constants import THAI_CONSONANT_CHARS
-from thaipua.core.domain.cluster import ThaiCluster
 from thaipua.core.domain.errors import LayoutError
 from thaipua.core.domain.grid import LEGAL_COMBOS, MATERIALIZED
 from thaipua.core.domain.layout import fresh_engine, layout_from_dict
@@ -74,7 +73,7 @@ def test_ordinals_agree_with_the_engine_full_table() -> None:
     for ordinal in range(cluster_count()):
         key = key_at_ordinal(ordinal)
         assert cluster_ordinal(key) == ordinal
-        assert full[ThaiCluster.from_key(key)] == 0xE000 + ordinal
+        assert full[key] == 0xE000 + ordinal
 
 
 def test_layout_from_dict_accepts_current_and_missing_versions() -> None:

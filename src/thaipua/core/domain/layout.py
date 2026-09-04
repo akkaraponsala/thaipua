@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from thaipua.core.domain.cluster import ThaiCluster, ThaiKey
+from thaipua.core.domain.cluster import ThaiCluster, ThaiKey, render_key
 from thaipua.core.domain.errors import LayoutError
 from thaipua.core.domain.grid import GRID_VERSION, LEGAL_COMBOS, MATERIALIZED, PER_CONSONANT, SlotGrid
 from thaipua.core.domain.pua_map import PuaCodepoint
@@ -15,6 +15,11 @@ from thaipua.core.domain.thai import CONSONANTS
 CURRENT_LAYOUT_VERSION: Literal[2] = 2
 PUA_START: int = 0xE000
 PUA_END: int = 0xF8FF
+
+_MATERIALIZED_COMBOS: tuple[tuple[str, int], ...] = tuple(
+    (suffix, index) for index, suffix in enumerate(LEGAL_COMBOS) if suffix in MATERIALIZED
+)
+"""Materialized suffixes paired with their stride-60 combo indices, resolved once at import."""
 
 
 class LayoutDocument(BaseModel):
@@ -53,26 +58,25 @@ class LayoutEngine(BaseModel):
         return self.document.base
 
     @property
-    def map(self) -> dict[ThaiCluster, int]:
-        """Compute the effective Thai-key-to-codepoint map on demand."""
-        out: dict[ThaiCluster, int] = {}
+    def map(self) -> dict[str, int]:
+        """Compute the effective canonical-key-to-codepoint map on demand, without validating keys."""
+        out: dict[str, int] = {}
         for cons_index, cons in enumerate(CONSONANTS):
-            for suffix in MATERIALIZED:
-                combo = self.grid.combo_index_of(suffix)
-                cluster = ThaiCluster.from_key(chr(cons.value) + suffix)
-                out[cluster] = self.grid.codepoint(self.document.base, cons_index, combo)
+            lead = chr(cons.value)
+            for suffix, combo in _MATERIALIZED_COMBOS:
+                out[lead + suffix] = self.grid.codepoint(self.document.base, cons_index, combo)
         for key, pin in self.document.relocations.items():
             cluster = key if isinstance(key, ThaiCluster) else ThaiCluster.from_key(str(key))
-            out[cluster] = int(pin)
+            out[render_key(cluster)] = int(pin)
         return out
 
-    def full_table(self) -> dict[ThaiCluster, int]:
-        """Compute all 2,520 v2 ordinals, including reserved-but-unmaterialized holes."""
-        out: dict[ThaiCluster, int] = {}
+    def full_table(self) -> dict[str, int]:
+        """Compute all 2,520 v2 ordinals, keyed by canonical stored-form key."""
+        out: dict[str, int] = {}
         for cons_index, cons in enumerate(CONSONANTS):
+            lead = chr(cons.value)
             for combo_index, suffix in enumerate(LEGAL_COMBOS):
-                cluster = ThaiCluster.from_key(chr(cons.value) + suffix)
-                out[cluster] = self.grid.codepoint(self.document.base, cons_index, combo_index)
+                out[lead + suffix] = self.grid.codepoint(self.document.base, cons_index, combo_index)
         return out
 
     def with_base(self, base: int) -> LayoutEngine:

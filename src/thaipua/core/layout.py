@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START, THAI_CONSONANT_CHARS
-from thaipua.core.domain.cluster import ThaiCluster, canonical_cluster_key, canonical_suffix, try_key
+from thaipua.core.domain.cluster import ThaiCluster, canonical_cluster_key, canonical_suffix, render_key, try_key
 from thaipua.core.domain.errors import LayoutError
 from thaipua.core.domain.grid import LEGAL_COMBOS, STRIDE
 from thaipua.core.domain.layout import LayoutDocument, LayoutEngine
@@ -89,15 +89,6 @@ def canonical_layout(base: int) -> dict[str, str]:
     return effective_layout(base, {})
 
 
-def _render_cluster(cluster: ThaiCluster) -> str:
-    """Render a cluster in stored construction order (`below + above + tone`)."""
-    parts = [chr(cluster.consonant.value)]
-    for mark in (cluster.below, cluster.above, cluster.tone):
-        if mark is not None:
-            parts.append(chr(mark.value))
-    return "".join(parts)
-
-
 def _engine_for(base: int, relocations: dict[str, str]) -> tuple[LayoutEngine, dict[str, str]]:
     """Build the domain engine for the in-range pins, plus the out-of-range overlay.
 
@@ -111,7 +102,7 @@ def _engine_for(base: int, relocations: dict[str, str]) -> tuple[LayoutEngine, d
         if cluster is None or not isinstance(pua_char, str) or len(pua_char) != 1:
             logger.warning("Ignoring malformed relocation %r -> %r", raw_key, pua_char)
             continue
-        canonical = _render_cluster(cluster)
+        canonical = render_key(cluster)
         if not PUA_RANGE_START <= ord(pua_char) <= PUA_RANGE_END:
             overlay[canonical] = pua_char
             continue
@@ -131,8 +122,8 @@ def effective_layout(base: int, relocations: dict[str, str]) -> dict[str, str]:
 
 
 def _render_effective(engine: LayoutEngine, overlay: dict[str, str]) -> dict[str, str]:
-    """Render the engine map in stored construction order, then apply the out-of-range overlay."""
-    mapping = {_render_cluster(cluster): chr(codepoint) for cluster, codepoint in engine.map.items()}
+    """Copy the engine map to PUA chars, then apply the out-of-range overlay."""
+    mapping = {key: chr(codepoint) for key, codepoint in engine.map.items()}
     mapping.update(overlay)
     return mapping
 
@@ -224,8 +215,9 @@ class LayoutState:
             pins.append(RelocatePin(cluster=cluster, codepoint=ord(pua_char)))
         if pins:
             self.apply_resolutions(pins)
+        else:
+            self._rebuild()
         logger.info("Applied %d relocation(s) after manual edit", len(self.relocations))
-        self._rebuild()
 
     def apply_resolution(self, command: ResolveCommand) -> None:
         """Fold one domain slot decision into the raw state, then revalidate once."""
@@ -246,13 +238,13 @@ class LayoutState:
         engine = self._engine.model_copy(update={"approvals": dict(self.approvals)})
         for command in pending:
             if isinstance(command, RelocatePin) and not PUA_RANGE_START <= command.codepoint <= PUA_RANGE_END:
-                raw_extras[_render_cluster(command.cluster)] = chr(command.codepoint)
+                raw_extras[render_key(command.cluster)] = chr(command.codepoint)
             else:
                 engine = resolve(engine, command)
         rendered: dict[str, str] = {}
         for key, pin in engine.document.relocations.items():
             cluster = key if isinstance(key, ThaiCluster) else ThaiCluster.from_key(str(key))
-            rendered[_render_cluster(cluster)] = chr(pin)
+            rendered[render_key(cluster)] = chr(pin)
         rendered.update(raw_extras)
         rendered.update({key: value for key, value in self._overlay.items() if key not in rendered})
         rendered.update(

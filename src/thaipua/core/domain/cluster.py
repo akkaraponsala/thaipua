@@ -52,6 +52,15 @@ class ThaiCluster(BaseModel):
             raise ClusterError(str(exc)) from exc
 
 
+def render_key(cluster: ThaiCluster) -> str:
+    """Render a validated cluster in stored construction order (`below + above + tone`)."""
+    parts = [chr(cluster.consonant.value)]
+    for mark in (cluster.below, cluster.above, cluster.tone):
+        if mark is not None:
+            parts.append(chr(mark.value))
+    return "".join(parts)
+
+
 def _coerce_key(value: Any) -> ThaiCluster:
     """Coerce `str` mapping keys and dicts into a validated `ThaiCluster`."""
     if isinstance(value, ThaiCluster):
