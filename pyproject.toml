@@ -9,29 +9,30 @@ description = "Converts Thai text to PUA Unicode and builds composed fonts mappe
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "PySide6",
     "darkdetect",
     "fonttools",
-    "PySide6",
+    "pydantic",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff",
+    "imageio",
     "mypy",
+    "nuitka == 4.1.1",
     "pytest",
     "pytest-cov",
-    "nuitka == 4.1.1",
-    "imageio",
+    "ruff",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff",
+    "imageio",
     "mypy",
+    "nuitka == 4.1.1",
     "pytest",
     "pytest-cov",
-    "nuitka == 4.1.1",
-    "imageio",
+    "ruff",
 ]
 
 [project.gui-scripts]
@@ -120,6 +121,7 @@ module = [
     "PySide6.*",
     "darkdetect.*",
     "fontTools.*",
+    "pydantic.*",
     "qdarktheme.*",
 ]
 ignore_missing_imports = true
