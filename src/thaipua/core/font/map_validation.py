@@ -7,8 +7,8 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
-from thaipua.core.fonttools.ownership import SlotOwnership, classify_pua_slot
-from thaipua.core.fonttools.specs import decompose_thai_cluster
+from thaipua.core.font.ownership import SlotOwnership, classify_pua_slot
+from thaipua.core.font.specs import decompose_thai_cluster
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

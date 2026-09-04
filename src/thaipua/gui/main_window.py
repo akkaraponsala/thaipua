@@ -22,10 +22,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from thaipua.core.file_codec import decode_files, encode_files
-from thaipua.core.fonttools.composer import InstallStatus
-from thaipua.core.fonttools.map_validation import IssueSeverity, PuaMapIssue
-from thaipua.core.fonttools.ownership import SlotOwnership
+from thaipua.core.font.composer import InstallStatus
+from thaipua.core.font.map_validation import IssueSeverity, PuaMapIssue
+from thaipua.core.font.ownership import SlotOwnership
+from thaipua.core.font.specs import CompositeSpec
 from thaipua.core.fonttools.settings import (
     SUB_ABOVE_VOWEL,
     SUB_BELOW_VOWEL,
@@ -34,9 +34,9 @@ from thaipua.core.fonttools.settings import (
     PlacementSettings,
     default_placement_settings,
 )
-from thaipua.core.fonttools.specs import CompositeSpec
 from thaipua.core.layout import LayoutConflict
 from thaipua.core.paths import DEFAULT_PROFILES_DIR
+from thaipua.core.text.file_codec import decode_files, encode_files
 from thaipua.gui import icons, theme
 from thaipua.gui.font_service import FontService
 from thaipua.gui.state import (
@@ -67,7 +67,7 @@ from thaipua.gui.widgets.status_footer import StatusBar
 from thaipua.gui.widgets.top_toolbar import TopToolbar
 
 if TYPE_CHECKING:
-    from thaipua.core.fonttools.alternates import GlyphSubstitution
+    from thaipua.core.font.alternates import GlyphSubstitution
 
 logger = logging.getLogger(__name__)
 

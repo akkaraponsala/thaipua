@@ -16,8 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from thaipua.core.fonttools.occupancy import PuaOccupant
-from thaipua.core.fonttools.ownership import SlotOwnership
+from thaipua.core.font.occupancy import PuaOccupant
+from thaipua.core.font.ownership import SlotOwnership
 from thaipua.gui import theme
 
 

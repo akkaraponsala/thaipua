@@ -623,7 +623,7 @@ def test_combo_and_base_offsets_stack() -> None:
 
 
 def test_state_single_and_combo_offsets_are_independent() -> None:
-    from thaipua.core.fonttools.specs import CompositeSpec
+    from thaipua.core.font.specs import CompositeSpec
     from thaipua.gui.state import MarkCategory, apply_offset, current_mark_offset
 
     cons = CONSONANT_KO_KAI
@@ -646,7 +646,7 @@ def test_state_single_and_combo_offsets_are_independent() -> None:
 
 
 def test_composer_combo_key_requires_two_marks() -> None:
-    from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
+    from thaipua.core.font.composer import ThaiPuaFontGenerator
 
     assert ThaiPuaFontGenerator._combo_key(None, VOWEL_MAI_HAN_AKAT, None) is None
     assert (

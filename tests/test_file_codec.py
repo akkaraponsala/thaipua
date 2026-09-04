@@ -6,8 +6,8 @@ import json
 import struct
 from pathlib import Path
 
-from thaipua.core.file_codec import decode_files, encode_files
-from thaipua.core.string_table import StringEntry, parse_string_table, write_string_table
+from thaipua.core.text.file_codec import decode_files, encode_files
+from thaipua.core.text.string_table import StringEntry, parse_string_table, write_string_table
 
 
 def _write_map(tmp_path: Path, mapping: dict[str, str]) -> Path:

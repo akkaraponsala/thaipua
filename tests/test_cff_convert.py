@@ -11,8 +11,8 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.t2CharStringPen import T2CharStringPen
 from fontTools.ttLib import TTFont
 
-from thaipua.core.fonttools.cff_convert import MAX_APPROXIMATION_ERROR, convert_cff_to_truetype, has_cff_outlines
-from thaipua.core.fonttools.composer import InstallStatus, ThaiPuaFontGenerator
+from thaipua.core.font.cff_convert import MAX_APPROXIMATION_ERROR, convert_cff_to_truetype, has_cff_outlines
+from thaipua.core.font.composer import InstallStatus, ThaiPuaFontGenerator
 from thaipua.gui.font_service import FontService
 
 _TRUETYPE_SFNT_VERSION = "\000\001\000\000"

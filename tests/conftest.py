@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
+from thaipua.core.font.composer import ThaiPuaFontGenerator
 
 SAMPLE_FONT_PATH = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Sarabun-Regular.ttf"
 

@@ -29,14 +29,14 @@ from PySide6.QtWidgets import (
 )
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
-from thaipua.core.fonttools.map_validation import (
+from thaipua.core.font.map_validation import (
     IssueSeverity,
     PuaMapIssue,
     PuaSlotContext,
     parse_codepoint,
     validate_pua_map,
 )
-from thaipua.core.fonttools.specs import decompose_thai_cluster
+from thaipua.core.font.specs import decompose_thai_cluster
 from thaipua.core.pua_map import next_free_codepoint
 
 _ERROR_BACKGROUND = QColor(190, 60, 60, 46)

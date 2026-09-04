@@ -55,8 +55,8 @@ from thaipua.gui.state import (
 from thaipua.gui.widgets.collapsible_section import CollapsibleSection
 
 if TYPE_CHECKING:
-    from thaipua.core.fonttools.alternates import GlyphSubstitution
-    from thaipua.core.fonttools.specs import CompositeSpec
+    from thaipua.core.font.alternates import GlyphSubstitution
+    from thaipua.core.font.specs import CompositeSpec
 
 OFFSET_MIN = -1000
 OFFSET_MAX = 1000

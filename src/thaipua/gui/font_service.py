@@ -11,21 +11,22 @@ from typing import Any
 from fontTools.ttLib import TTFont
 
 from thaipua.core.constants import PUA_RANGE_START
-from thaipua.core.fonttools.alternates import GlyphSubstitution, find_glyph_substitutions
-from thaipua.core.fonttools.bounding_box import BoundingBox
-from thaipua.core.fonttools.composer import (
+from thaipua.core.font.alternates import GlyphSubstitution, find_glyph_substitutions
+from thaipua.core.font.bounding_box import BoundingBox
+from thaipua.core.font.composer import (
     ComponentPlacement,
     InstallResult,
     InstallStatus,
     ThaiPuaFontGenerator,
 )
-from thaipua.core.fonttools.map_validation import (
+from thaipua.core.font.map_validation import (
     PuaMapIssue,
     PuaSlotContext,
     slot_context_from_font,
     validate_pua_map,
 )
-from thaipua.core.fonttools.occupancy import PuaOccupant, scan_pua_occupants
+from thaipua.core.font.occupancy import PuaOccupant, scan_pua_occupants
+from thaipua.core.font.specs import CompositeSpec, iter_composite_specs
 from thaipua.core.fonttools.settings import (
     SUB_ABOVE_VOWEL,
     SUB_BELOW_VOWEL,
@@ -36,7 +37,6 @@ from thaipua.core.fonttools.settings import (
     load_placement_settings,
     save_placement_settings,
 )
-from thaipua.core.fonttools.specs import CompositeSpec, iter_composite_specs
 from thaipua.core.layout import (
     DEFAULT_BASE_CODEPOINT,
     LayoutConflict,

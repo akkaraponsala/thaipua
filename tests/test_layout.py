@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START, THAI_CONSONANT_CHARS
-from thaipua.core.fonttools.occupancy import PuaOccupant
-from thaipua.core.fonttools.ownership import SlotOwnership
+from thaipua.core.font.occupancy import PuaOccupant
+from thaipua.core.font.ownership import SlotOwnership
 from thaipua.core.layout import (
     DEFAULT_BASE_CODEPOINT,
     LayoutState,

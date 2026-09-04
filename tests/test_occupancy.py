@@ -6,8 +6,8 @@ from typing import Any
 
 from conftest import FakeCompositeGlyph, FakeGlyf, FakeGlyph
 
-from thaipua.core.fonttools.occupancy import scan_pua_occupants
-from thaipua.core.fonttools.ownership import SlotOwnership
+from thaipua.core.font.occupancy import scan_pua_occupants
+from thaipua.core.font.ownership import SlotOwnership
 
 
 class _ScanFont:

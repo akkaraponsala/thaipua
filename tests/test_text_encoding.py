@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thaipua.core.text_encoding import detect_text_encoding
+from thaipua.core.text.text_encoding import detect_text_encoding
 
 
 def test_detects_utf32_le_bom(tmp_path: Path) -> None:

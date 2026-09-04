@@ -5,7 +5,7 @@ from __future__ import annotations
 from conftest import FakeGlyf, make_glyf
 
 from thaipua.core.constants import PUA_RANGE_START
-from thaipua.core.fonttools.map_validation import (
+from thaipua.core.font.map_validation import (
     IssueSeverity,
     PuaSlotContext,
     parse_codepoint,

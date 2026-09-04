@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from thaipua.core.fonttools.alternates import GlyphSubstitution
+from thaipua.core.font.alternates import GlyphSubstitution
 from thaipua.core.layout import canonical_tail_start, is_valid_base
 from thaipua.gui import theme
 from thaipua.gui.theme import ThemeMode

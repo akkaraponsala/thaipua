@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, overload
 
-from thaipua.core.fonttools.specs import ABOVE_VOWELS, BELOW_VOWELS, CONSONANT_PROTRUSION, THAI_CONSONANTS, TONE_MARKS
+from thaipua.core.font.specs import ABOVE_VOWELS, BELOW_VOWELS, CONSONANT_PROTRUSION, THAI_CONSONANTS, TONE_MARKS
 
 logger = logging.getLogger(__name__)
 

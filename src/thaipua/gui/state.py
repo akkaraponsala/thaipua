@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from thaipua.core.font.specs import THAI_CONSONANTS, CompositeSpec, iter_composite_specs
 from thaipua.core.fonttools.settings import (
     ROLE_ABOVE_VOWEL,
     ROLE_BELOW_VOWEL,
@@ -29,10 +30,9 @@ from thaipua.core.fonttools.settings import (
     context_canonicalizer,
     default_placement_settings,
 )
-from thaipua.core.fonttools.specs import THAI_CONSONANTS, CompositeSpec, iter_composite_specs
 
 if TYPE_CHECKING:
-    from thaipua.core.fonttools.alternates import GlyphSubstitution
+    from thaipua.core.font.alternates import GlyphSubstitution
 
 GRID_COLUMNS = 6
 GRID_ROWS = 6

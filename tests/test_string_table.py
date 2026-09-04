@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 
-from thaipua.core.string_table import (
+from thaipua.core.text.string_table import (
     CorruptedStringTableError,
     FileType,
     StringEntry,

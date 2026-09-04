@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
-from thaipua.core.fonttools.ownership import SlotOwnership, classify_pua_slot
+from thaipua.core.font.ownership import SlotOwnership, classify_pua_slot
 
 if TYPE_CHECKING:
     from fontTools.ttLib import TTFont

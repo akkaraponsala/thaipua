@@ -1,74 +1,22 @@
 """GUI-free backend for Thai-to-PUA encoding and composite PUA font generation."""
 
-from thaipua.core.encoding import (
-    PuaEncodingMap,
-    load_decode_table,
-    load_encoding_map,
-    normalize_sara_am,
-)
-from thaipua.core.file_codec import decode_files, encode_files
-from thaipua.core.fonttools import (
-    ABOVE_VOWELS,
-    BELOW_VOWELS,
-    THAI_CONSONANTS,
-    TONE_MARKS,
-    CompositeSpec,
-    ConsonantSettings,
-    GlyphSubstitution,
-    GsubAlternateIndex,
-    Metadata,
-    Offset,
-    PlacementSettings,
-    SnapConfig,
-    ThaiPuaFontGenerator,
-    default_placement_settings,
-    find_glyph_substitutions,
-    iter_composite_specs,
-    load_placement_settings,
-    save_placement_settings,
-    settings_to_dict,
-)
-from thaipua.core.pua_map import load_pua_map_dict
-from thaipua.core.string_table import (
-    ParsedStringTable,
-    StringEntry,
-    StringTableError,
-    parse_string_table,
-    write_string_table,
-)
-from thaipua.core.text_encoding import detect_text_encoding
+from __future__ import annotations
 
-__all__ = [
-    "ABOVE_VOWELS",
-    "BELOW_VOWELS",
-    "THAI_CONSONANTS",
-    "TONE_MARKS",
-    "CompositeSpec",
-    "ConsonantSettings",
-    "GlyphSubstitution",
-    "GsubAlternateIndex",
-    "Metadata",
-    "Offset",
-    "ParsedStringTable",
-    "PlacementSettings",
-    "PuaEncodingMap",
-    "SnapConfig",
-    "StringEntry",
-    "StringTableError",
-    "ThaiPuaFontGenerator",
-    "decode_files",
-    "default_placement_settings",
-    "detect_text_encoding",
-    "encode_files",
-    "find_glyph_substitutions",
-    "iter_composite_specs",
-    "load_decode_table",
-    "load_encoding_map",
-    "load_placement_settings",
-    "load_pua_map_dict",
-    "normalize_sara_am",
-    "parse_string_table",
-    "save_placement_settings",
-    "settings_to_dict",
-    "write_string_table",
-]
+from typing import Any
+
+from thaipua.core._reexports import CORE_EXPORTS, resolve_lazy_export
+
+__all__ = list(CORE_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve a legacy symbol from its owning submodule on first use, then cache it."""
+    try:
+        return resolve_lazy_export(CORE_EXPORTS, globals(), name)
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+
+
+def __dir__() -> list[str]:
+    """List every lazily available legacy symbol."""
+    return sorted(__all__)

@@ -10,8 +10,9 @@ import pytest
 from conftest import SAMPLE_FONT_PATH, FakeGlyf, make_glyf
 
 from thaipua.core.constants import PUA_RANGE_END
-from thaipua.core.fonttools.composer import ThaiPuaFontGenerator
-from thaipua.core.fonttools.map_validation import IssueSeverity
+from thaipua.core.font.composer import ThaiPuaFontGenerator
+from thaipua.core.font.map_validation import IssueSeverity
+from thaipua.core.font.specs import CompositeSpec
 from thaipua.core.fonttools.settings import (
     ROLE_TONE_MARK,
     ConsonantSettings,
@@ -20,7 +21,6 @@ from thaipua.core.fonttools.settings import (
     default_placement_settings,
     save_placement_settings,
 )
-from thaipua.core.fonttools.specs import CompositeSpec
 from thaipua.core.layout import (
     canonical_codepoint,
     canonical_tail_start,

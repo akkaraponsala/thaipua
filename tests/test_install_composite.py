@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
-from thaipua.core.fonttools.composer import InstallResult, InstallStatus, ThaiPuaFontGenerator
-from thaipua.core.fonttools.ownership import TOOL_GLYPH_PREFIX
+from thaipua.core.font.composer import InstallResult, InstallStatus, ThaiPuaFontGenerator
+from thaipua.core.font.ownership import TOOL_GLYPH_PREFIX
 
 KO_KAI = 0x0E01
 

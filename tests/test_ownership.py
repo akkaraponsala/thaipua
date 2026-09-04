@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from conftest import make_glyf
 
-from thaipua.core.fonttools.ownership import TOOL_GLYPH_PREFIX, SlotOwnership, classify_pua_slot
+from thaipua.core.font.ownership import TOOL_GLYPH_PREFIX, SlotOwnership, classify_pua_slot
 
 
 def test_unmapped_codepoint_is_free() -> None:

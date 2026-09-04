@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thaipua.core.encoding import (
+from thaipua.core.text.encoding import (
     build_encode_transform,
     load_decode_table,
     load_encoding_map,

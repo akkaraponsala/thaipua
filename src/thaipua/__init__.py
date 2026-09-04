@@ -1,73 +1,26 @@
 """Thai-to-PUA encoding and composite PUA font generation, with a PySide6 desktop frontend."""
 
-from thaipua.core import (
-    ABOVE_VOWELS,
-    BELOW_VOWELS,
-    THAI_CONSONANTS,
-    TONE_MARKS,
-    CompositeSpec,
-    ConsonantSettings,
-    GlyphSubstitution,
-    GsubAlternateIndex,
-    Metadata,
-    Offset,
-    ParsedStringTable,
-    PlacementSettings,
-    PuaEncodingMap,
-    SnapConfig,
-    StringEntry,
-    StringTableError,
-    ThaiPuaFontGenerator,
-    decode_files,
-    default_placement_settings,
-    detect_text_encoding,
-    encode_files,
-    find_glyph_substitutions,
-    iter_composite_specs,
-    load_decode_table,
-    load_encoding_map,
-    load_placement_settings,
-    load_pua_map_dict,
-    normalize_sara_am,
-    parse_string_table,
-    save_placement_settings,
-    settings_to_dict,
-    write_string_table,
-)
+from __future__ import annotations
+
+from typing import Any
+
+from thaipua.core._reexports import APP_EXPORTS, resolve_lazy_export
 
 __version__ = "0.1.5"
 __all__ = [
-    "ABOVE_VOWELS",
-    "BELOW_VOWELS",
-    "THAI_CONSONANTS",
-    "TONE_MARKS",
-    "CompositeSpec",
-    "ConsonantSettings",
-    "GlyphSubstitution",
-    "GsubAlternateIndex",
-    "Metadata",
-    "Offset",
-    "ParsedStringTable",
-    "PlacementSettings",
-    "PuaEncodingMap",
-    "SnapConfig",
-    "StringEntry",
-    "StringTableError",
-    "ThaiPuaFontGenerator",
+    *APP_EXPORTS,
     "__version__",
-    "decode_files",
-    "default_placement_settings",
-    "detect_text_encoding",
-    "encode_files",
-    "find_glyph_substitutions",
-    "iter_composite_specs",
-    "load_decode_table",
-    "load_encoding_map",
-    "load_placement_settings",
-    "load_pua_map_dict",
-    "normalize_sara_am",
-    "parse_string_table",
-    "save_placement_settings",
-    "settings_to_dict",
-    "write_string_table",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve a legacy symbol through the lazy `thaipua.core` package on first use."""
+    try:
+        return resolve_lazy_export(APP_EXPORTS, globals(), name)
+    except KeyError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+
+
+def __dir__() -> list[str]:
+    """List every lazily available legacy symbol."""
+    return sorted(__all__)
