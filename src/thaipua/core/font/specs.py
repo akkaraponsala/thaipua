@@ -6,21 +6,20 @@ import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from thaipua.core.constants import THAI_CONSONANT_CHARS
+from thaipua.core.domain import thai as _thai
+from thaipua.core.domain.cluster import try_key
 
 logger = logging.getLogger(__name__)
 
-THAI_CONSONANTS: set[int] = {ord(c) for c in THAI_CONSONANT_CHARS}
-BELOW_VOWELS: set[int] = {0x0E38, 0x0E39}
-ABOVE_VOWELS: set[int] = {0x0E31, 0x0E34, 0x0E35, 0x0E36, 0x0E37, 0x0E47, 0x0E4D}
-TONE_MARKS: set[int] = {0x0E48, 0x0E49, 0x0E4A, 0x0E4B, 0x0E4C}
+THAI_CONSONANTS: set[int] = {consonant.value for consonant in _thai.CONSONANTS}
+BELOW_VOWELS: set[int] = set(_thai.BELOW_VOWELS)
+ABOVE_VOWELS: set[int] = set(_thai.ABOVE_VOWELS)
+TONE_MARKS: set[int] = set(_thai.TONE_MARKS)
 
-# Protrusion direction scoping consonant self-substitutions; only ascender
-# consonants (e.g. ฬ) are listed — all others fall back to the generic context
-# canonicalization.
-CONSONANT_PROTRUSION: dict[int, str] = {
-    ord("ฬ"): "ascender",
-}
+# Protrusion direction scoping consonant self-substitutions; canonical home is
+# domain.thai (only ascender consonants such as ฬ are listed — all others fall
+# back to the generic context canonicalization).
+CONSONANT_PROTRUSION: dict[int, str] = dict(_thai.CONSONANT_PROTRUSION)
 
 
 @dataclass(slots=True, frozen=True)
@@ -38,34 +37,20 @@ class CompositeSpec:
 def decompose_thai_cluster(thai_text: str) -> tuple[int, int | None, int | None, int | None] | None:
     """Split a Thai cluster into `(cons_uni, below_uni, above_uni, tone_uni)`.
 
-    Return `None` when the text is empty, does not start with a Thai consonant,
-    or contains an unrecognized mark.
+    Parsing is role-based and order-insensitive, shared with every other entry
+    point through `try_key` — the single home of the cluster classifier.
+    Return `None` for empty text, non-consonant leads, unrecognized marks,
+    duplicate roles, and below+above stacks; callers report the skip themselves.
     """
-    if not thai_text:
+    cluster = try_key(thai_text)
+    if cluster is None:
         return None
-    codes = [ord(ch) for ch in thai_text]
-    cons_uni = codes[0]
-    if cons_uni not in THAI_CONSONANTS:
-        logger.warning("Cannot decompose Thai cluster %r: U+%04X is not a Thai consonant", thai_text, cons_uni)
-        return None
-    below_uni = None
-    above_uni = None
-    tone_uni = None
-    for code in codes[1:]:
-        if code in BELOW_VOWELS:
-            below_uni = code
-        elif code in ABOVE_VOWELS:
-            above_uni = code
-        elif code in TONE_MARKS:
-            tone_uni = code
-        else:
-            logger.warning(
-                "Cannot decompose Thai cluster %r: U+%04X is not a recognized vowel or tone mark",
-                thai_text,
-                code,
-            )
-            return None
-    return (cons_uni, below_uni, above_uni, tone_uni)
+    return (
+        cluster.consonant.value,
+        cluster.below.value if cluster.below is not None else None,
+        cluster.above.value if cluster.above is not None else None,
+        cluster.tone.value if cluster.tone is not None else None,
+    )
 
 
 def iter_composite_specs(mapping: dict[str, str]) -> Iterator[CompositeSpec]:
@@ -76,6 +61,7 @@ def iter_composite_specs(mapping: dict[str, str]) -> Iterator[CompositeSpec]:
             continue
         decomposed = decompose_thai_cluster(thai_key)
         if decomposed is None:
+            logger.warning("Skipping mapping entry %r: not a decomposable Thai cluster", thai_key)
             continue
         cons_uni, below_uni, above_uni, tone_uni = decomposed
         yield CompositeSpec(

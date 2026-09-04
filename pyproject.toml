@@ -54,7 +54,7 @@ default-groups = ["dev"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = ["src/qdarktheme", ".opencode"]
+exclude = ["src/qdarktheme"]
 
 [tool.ruff.format]
 quote-style = "double"

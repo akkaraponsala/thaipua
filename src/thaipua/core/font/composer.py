@@ -10,10 +10,7 @@ from typing import Any
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 
-from thaipua.core.font.bounding_box import BoundingBox, BoundingBoxCache
-from thaipua.core.font.cff_convert import convert_cff_to_truetype, has_cff_outlines
-from thaipua.core.font.ownership import TOOL_GLYPH_PREFIX, SlotOwnership, classify_pua_slot
-from thaipua.core.fonttools.settings import (
+from thaipua.core.domain.settings import (
     ROLE_ABOVE_VOWEL,
     ROLE_BELOW_VOWEL,
     ROLE_TONE_MARK,
@@ -23,12 +20,17 @@ from thaipua.core.fonttools.settings import (
     SNAP_TONE_TO_ABOVE,
     SUB_ABOVE_VOWEL,
     SUB_BELOW_VOWEL,
+    SUB_CONSONANT,
     SUB_TONE_MARK,
     ConsonantSettings,
     PlacementSettings,
-    combo_key_from_codepoints,
+    combo_key_for_marks,
     default_placement_settings,
 )
+from thaipua.core.domain.slots import Decision, decide
+from thaipua.core.font.bounding_box import BoundingBox, BoundingBoxCache
+from thaipua.core.font.cff_convert import convert_cff_to_truetype, has_cff_outlines
+from thaipua.core.font.ownership import TOOL_GLYPH_PREFIX, classify_pua_slot
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +46,10 @@ class _AboveVowelPlacement:
 
 @dataclass(slots=True, frozen=True)
 class ComponentPlacement:
-    """One resolved composite component: a glyph name plus its affine transform."""
+    """One resolved composite component: a glyph name plus its `(dx, dy)` translation."""
 
     glyph_name: str
-    transform: tuple[int, int, int, int, int, int]
+    transform: tuple[int, int]
 
 
 class InstallStatus(Enum):
@@ -69,12 +71,13 @@ class InstallResult:
     glyph_name: str | None
 
 
-_INSTALL_STATUS_BY_OWNERSHIP: dict[SlotOwnership, InstallStatus] = {
-    SlotOwnership.FREE: InstallStatus.INSTALLED,
-    SlotOwnership.OWNED: InstallStatus.REPLACED_OWNED,
-    SlotOwnership.REPLACEABLE: InstallStatus.REPLACED_FOREIGN_COMPOSITE,
+_INSTALL_STATUS_BY_DECISION: dict[Decision, InstallStatus] = {
+    Decision.INSTALL: InstallStatus.INSTALLED,
+    Decision.REINSTALL_OWNED: InstallStatus.REPLACED_OWNED,
+    Decision.REPLACE_FOREIGN: InstallStatus.REPLACED_FOREIGN_COMPOSITE,
+    Decision.OVERRIDE_LOCKED: InstallStatus.OVERRIDDEN_LOCKED,
 }
-"""Map slot ownership verdicts to install outcomes; locked slots never reach an install."""
+"""Map the single policy decision to install outcomes; `SKIP_LOCKED` never reaches an install."""
 
 
 class ThaiPuaFontGenerator:
@@ -109,89 +112,71 @@ class ThaiPuaFontGenerator:
         """Return the cached bounding box for `glyph_name`, or `None` when unavailable."""
         return self.bbox.get_bounding_box(glyph_name)
 
-    @staticmethod
-    def _combo_key(below_uni: int | None, above_uni: int | None, tone_uni: int | None) -> str | None:
-        """Return the canonical combination key for a multi-mark cluster, or `None` for single marks."""
-        cps = [c for c in [below_uni, above_uni, tone_uni] if c]
-        if len(cps) < 2:
-            return None
-        return combo_key_from_codepoints(cps)
+    def _resolve_glyph(
+        self,
+        codepoint: int | None,
+        cons_settings: ConsonantSettings,
+        *,
+        present_roles: frozenset[str],
+        role: str,
+        missing: str | None,
+    ) -> str | None:
+        """Resolve one component glyph under its substitution override.
+
+        Return `missing` when the component is unrequested or its default glyph is
+        absent from the font — `""` for consonants so callers detect the gap,
+        `None` for marks.
+        """
+        if not codepoint:
+            return missing
+        default_name = self.get_glyph_name(codepoint)
+        if default_name is None:
+            return missing
+        explicit = cons_settings.substitution_for(codepoint, present_roles=present_roles)
+        if explicit and self.has_glyph(explicit):
+            logger.info("[ALT-EXPLICIT] %s -> %s (%s)", default_name, explicit, role)
+            return explicit
+        if explicit:
+            logger.info(
+                "[ALT-EXPLICIT-MISSED] %s -> %s: glyph not in font; using the default %s glyph",
+                default_name,
+                explicit,
+                role,
+            )
+        return default_name
 
     def resolve_consonant(
         self, cons_uni: int, cons_settings: ConsonantSettings, *, present_roles: frozenset[str]
     ) -> str:
         """Resolve the consonant glyph under its substitution override; return `""` when absent from the font."""
-        default_name = self.get_glyph_name(cons_uni)
-        if default_name is None:
-            return ""
-        explicit = cons_settings.substitution_for(cons_uni, present_roles=present_roles)
-        if explicit:
-            if self.has_glyph(explicit):
-                logger.info("[ALT-EXPLICIT] %s -> %s (consonant)", default_name, explicit)
-                return explicit
-            logger.info(
-                "[ALT-EXPLICIT-MISSED] %s -> %s: glyph not in font; using the default consonant glyph",
-                default_name,
-                explicit,
-            )
-        return default_name
+        resolved = self._resolve_glyph(
+            cons_uni, cons_settings, present_roles=present_roles, role=SUB_CONSONANT, missing=""
+        )
+        return resolved if resolved is not None else ""
 
     def resolve_below_vowel(
         self, below_uni: int | None, cons_settings: ConsonantSettings, *, present_roles: frozenset[str]
     ) -> str | None:
         """Resolve the below-vowel glyph under its substitution override; return `None` when none is requested."""
-        if not below_uni:
-            return None
-        default_name = self.get_glyph_name(below_uni)
-        explicit = cons_settings.substitution_for(below_uni, present_roles=present_roles)
-        if explicit and self.has_glyph(explicit):
-            logger.info("[ALT-EXPLICIT] %s -> %s (below_vowel)", default_name, explicit)
-            return explicit
-        if explicit:
-            logger.info(
-                "[ALT-EXPLICIT-MISSED] %s -> %s: glyph not in font; using the default below-vowel glyph",
-                default_name,
-                explicit,
-            )
-        return default_name
+        return self._resolve_glyph(
+            below_uni, cons_settings, present_roles=present_roles, role=SUB_BELOW_VOWEL, missing=None
+        )
 
     def resolve_vowel(
         self, above_uni: int | None, cons_settings: ConsonantSettings, *, present_roles: frozenset[str]
     ) -> str | None:
         """Resolve the above-vowel glyph under its substitution override; return `None` when none is requested."""
-        if not above_uni:
-            return None
-        default_name = self.get_glyph_name(above_uni)
-        explicit = cons_settings.substitution_for(above_uni, present_roles=present_roles)
-        if explicit and self.has_glyph(explicit):
-            logger.info("[ALT-EXPLICIT] %s -> %s (above_vowel)", default_name, explicit)
-            return explicit
-        if explicit:
-            logger.info(
-                "[ALT-EXPLICIT-MISSED] %s -> %s: glyph not in font; using the default above-vowel glyph",
-                default_name,
-                explicit,
-            )
-        return default_name
+        return self._resolve_glyph(
+            above_uni, cons_settings, present_roles=present_roles, role=SUB_ABOVE_VOWEL, missing=None
+        )
 
     def resolve_tone(
         self, tone_uni: int | None, cons_settings: ConsonantSettings, *, present_roles: frozenset[str]
     ) -> str | None:
         """Resolve the tone-mark glyph under its substitution override; return `None` when none is requested."""
-        if not tone_uni:
-            return None
-        default_name = self.get_glyph_name(tone_uni)
-        explicit = cons_settings.substitution_for(tone_uni, present_roles=present_roles)
-        if explicit and self.has_glyph(explicit):
-            logger.info("[ALT-EXPLICIT] %s -> %s (tone_mark)", default_name, explicit)
-            return explicit
-        if explicit:
-            logger.info(
-                "[ALT-EXPLICIT-MISSED] %s -> %s: glyph not in font; using the default tone-mark glyph",
-                default_name,
-                explicit,
-            )
-        return default_name
+        return self._resolve_glyph(
+            tone_uni, cons_settings, present_roles=present_roles, role=SUB_TONE_MARK, missing=None
+        )
 
     def _place_below_vowel(
         self,
@@ -227,7 +212,7 @@ class ThaiPuaFontGenerator:
             logger.info("[PLACE-BELOW-DEFAULT] %s: base_dy=%d", vowel_name, base_dy)
         dy = base_dy + offset.y
         logger.info("[PLACE-BELOW] %s: dx=%d dy=%d", vowel_name, dx, dy)
-        components.append(ComponentPlacement(vowel_name, (1, 0, 0, 1, dx, dy)))
+        components.append(ComponentPlacement(vowel_name, (dx, dy)))
 
     def _place_above_vowel(
         self,
@@ -263,7 +248,7 @@ class ThaiPuaFontGenerator:
             logger.info("[PLACE-ABOVE-DEFAULT] %s: base_dy=%d", vowel_name, base_dy)
         dy = base_dy + offset.y
         logger.info("[PLACE-ABOVE] %s: dx=%d dy=%d", vowel_name, dx, dy)
-        components.append(ComponentPlacement(vowel_name, (1, 0, 0, 1, dx, dy)))
+        components.append(ComponentPlacement(vowel_name, (dx, dy)))
         return _AboveVowelPlacement(dx, dy, vowel_box)
 
     def _place_tone(
@@ -308,7 +293,7 @@ class ThaiPuaFontGenerator:
             logger.info("[PLACE-TONE-DEFAULT] %s: base_dy=%d", tone_name, base_dy)
         dy = base_dy + offset.y
         logger.info("[PLACE-TONE] %s: dx=%d dy=%d", tone_name, dx, dy)
-        components.append(ComponentPlacement(tone_name, (1, 0, 0, 1, dx, dy)))
+        components.append(ComponentPlacement(tone_name, (dx, dy)))
 
     def compose_components(
         self,
@@ -347,10 +332,10 @@ class ThaiPuaFontGenerator:
         below_name = self.resolve_below_vowel(below_uni, cons_settings, present_roles=present_roles)
         above_name = self.resolve_vowel(above_uni, cons_settings, present_roles=present_roles)
         actual_tone_name = self.resolve_tone(tone_uni, cons_settings, present_roles=present_roles)
-        components: list[ComponentPlacement] = [ComponentPlacement(actual_cons, (1, 0, 0, 1, 0, 0))]
+        components: list[ComponentPlacement] = [ComponentPlacement(actual_cons, (0, 0))]
         cons_advance, _cons_lsb = self.font["hmtx"][actual_cons]
         cons_box = self.bbox.get_bounding_box(actual_cons)
-        combo_key = self._combo_key(below_uni, above_uni, tone_uni)
+        combo_key = combo_key_for_marks(below_uni, above_uni, tone_uni)
         if below_name:
             self._place_below_vowel(
                 components,
@@ -410,8 +395,8 @@ class ThaiPuaFontGenerator:
         """
         existing = self._cmap.get(pua_code)
         ownership = classify_pua_slot(existing, self.font.get("glyf"))
-        overridden = ownership is SlotOwnership.LOCKED and allowed_locked is not None and pua_code in allowed_locked
-        if ownership is SlotOwnership.LOCKED and not overridden:
+        decision = decide(ownership, approved=allowed_locked is not None and pua_code in allowed_locked)
+        if decision is Decision.SKIP_LOCKED:
             logger.warning(
                 "[LOCKED] U+%04X: mapped to '%s' (unrecognized content); slot not overwritten",
                 pua_code,
@@ -425,16 +410,17 @@ class ThaiPuaFontGenerator:
             return InstallResult(InstallStatus.SKIPPED_MISSING_CONSONANT, None)
         pen = TTGlyphPen(self.font.getGlyphSet())
         for placement in components:
-            pen.addComponent(placement.glyph_name, placement.transform)
+            dx, dy = placement.transform
+            pen.addComponent(placement.glyph_name, (1, 0, 0, 1, dx, dy))
         new_glyph = pen.glyph()
         new_glyph.recalcBounds(self.font["glyf"])
         glyph_name = f"{TOOL_GLYPH_PREFIX}{pua_code:04X}"
         self._install_composite_glyph(glyph_name, new_glyph, pua_code, width_from=components[0].glyph_name)
         parts = [components[0].glyph_name] + [f"+{c.glyph_name}" for c in components[1:]]
-        status = InstallStatus.OVERRIDDEN_LOCKED if overridden else _INSTALL_STATUS_BY_OWNERSHIP[ownership]
-        if overridden:
+        status = _INSTALL_STATUS_BY_DECISION[decision]
+        if decision is Decision.OVERRIDE_LOCKED:
             logger.info("[OVERRIDE-LOCKED] U+%04X: replaced locked glyph '%s' per user override", pua_code, existing)
-        elif ownership is SlotOwnership.REPLACEABLE:
+        elif decision is Decision.REPLACE_FOREIGN:
             logger.info(
                 "[REPLACE-FOREIGN] U+%04X: replaced foreign composite '%s' with '%s'", pua_code, existing, glyph_name
             )

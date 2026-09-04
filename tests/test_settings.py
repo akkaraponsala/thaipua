@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from thaipua.core.fonttools.settings import (
+import pytest
+
+from thaipua.core.domain.errors import SettingsError
+from thaipua.core.domain.settings import (
     ROLE_ABOVE_VOWEL,
     ROLE_TONE_MARK,
     ROLE_TONE_MARK_ON_ABOVE_VOWEL,
@@ -21,9 +24,11 @@ from thaipua.core.fonttools.settings import (
     canonicalize_consonant_context,
     canonicalize_substitution_context,
     canonicalize_tone_mark_context,
+    settings_to_dict,
+)
+from thaipua.core.fonttools.settings import (
     load_placement_settings,
     save_placement_settings,
-    settings_to_dict,
 )
 
 TONE_MAI_EK = 0x0E48
@@ -449,9 +454,15 @@ def test_load_rejects_unsupported_version(tmp_path: Path) -> None:
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    settings = load_placement_settings(path)
-    assert settings.consonants == {}
-    assert settings.version == 1
+    with pytest.raises(SettingsError, match="unsupported settings version 99"):
+        load_placement_settings(path)
+
+
+def test_load_missing_version_defaults_to_current(tmp_path: Path) -> None:
+    data = {"consonants": {"U+0E1B": {"base_offsets": {"tone_mark": {"x": 1, "y": 0}}}}}
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert load_placement_settings(path).consonants[0x0E1B].base_offsets["tone_mark"] == Offset(x=1, y=0)
 
 
 def test_load_missing_file_returns_defaults(tmp_path: Path) -> None:
@@ -471,10 +482,11 @@ def test_load_rejects_raw_thai_character_keys(tmp_path: Path) -> None:
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert load_placement_settings(path).consonants == {}
+    with pytest.raises(SettingsError, match=r"not a U\+XXXX codepoint"):
+        load_placement_settings(path)
 
 
-def test_load_skips_non_consonant_codepoint_keys(tmp_path: Path) -> None:
+def test_load_rejects_non_consonant_codepoint_keys(tmp_path: Path) -> None:
     data = {
         "version": 1,
         "consonants": {
@@ -484,8 +496,8 @@ def test_load_skips_non_consonant_codepoint_keys(tmp_path: Path) -> None:
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    settings = load_placement_settings(path)
-    assert list(settings.consonants) == [0x0E1B]
+    with pytest.raises(SettingsError, match="not a Thai consonant"):
+        load_placement_settings(path)
 
 
 def test_load_rejects_mark_outside_group_category(tmp_path: Path) -> None:
@@ -502,8 +514,8 @@ def test_load_rejects_mark_outside_group_category(tmp_path: Path) -> None:
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    cs = load_placement_settings(path).for_consonant(0x0E1B)
-    assert cs.mark_offsets == {ROLE_TONE_MARK: {TONE_MAI_EK: Offset(2, 0)}}
+    with pytest.raises(SettingsError, match="not in the"):
+        load_placement_settings(path)
 
 
 def test_load_rejects_junk_combo_keys(tmp_path: Path) -> None:
@@ -513,7 +525,8 @@ def test_load_rejects_junk_combo_keys(tmp_path: Path) -> None:
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert load_placement_settings(path).for_consonant(0x0E1B).combo_offsets == {}
+    with pytest.raises(SettingsError, match=r"not a .* combo key"):
+        load_placement_settings(path)
 
 
 def test_load_rejects_duplicate_combo_codepoints(tmp_path: Path) -> None:
@@ -523,7 +536,8 @@ def test_load_rejects_duplicate_combo_codepoints(tmp_path: Path) -> None:
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert load_placement_settings(path).for_consonant(0x0E1B).combo_offsets == {}
+    with pytest.raises(SettingsError, match="repeats a codepoint"):
+        load_placement_settings(path)
 
 
 def test_load_normalizes_out_of_order_combo_key(tmp_path: Path) -> None:
@@ -557,7 +571,7 @@ def test_load_duplicate_condition_rules_last_wins(tmp_path: Path) -> None:
     assert cs.substitution_for(TONE_MAI_EK, present_roles=frozenset({SUB_TONE_MARK})) == "second"
 
 
-def test_load_ignores_non_positive_and_fractional_units_per_em(tmp_path: Path) -> None:
+def test_load_rejects_non_positive_and_fractional_units_per_em(tmp_path: Path) -> None:
     data = {
         "version": 1,
         "metadata": {"units_per_em": -100},
@@ -565,13 +579,15 @@ def test_load_ignores_non_positive_and_fractional_units_per_em(tmp_path: Path) -
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert load_placement_settings(path).metadata.units_per_em is None
+    with pytest.raises(SettingsError, match="invalid settings document"):
+        load_placement_settings(path)
     data["metadata"] = {"units_per_em": 1.5}
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert load_placement_settings(path).metadata.units_per_em is None
+    with pytest.raises(SettingsError, match="invalid settings document"):
+        load_placement_settings(path)
 
 
-def test_load_treats_empty_metadata_strings_as_unset(tmp_path: Path) -> None:
+def test_load_rejects_empty_metadata_strings(tmp_path: Path) -> None:
     data = {
         "version": 1,
         "metadata": {"font_name": "", "family_name": "Sarabun"},
@@ -579,20 +595,19 @@ def test_load_treats_empty_metadata_strings_as_unset(tmp_path: Path) -> None:
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    md = load_placement_settings(path).metadata
-    assert md.font_name is None
-    assert md.family_name == "Sarabun"
+    with pytest.raises(SettingsError, match="non-empty string"):
+        load_placement_settings(path)
 
 
-def test_load_fractional_offset_coerces_to_zero(tmp_path: Path) -> None:
+def test_load_rejects_fractional_offset(tmp_path: Path) -> None:
     data = {
         "version": 1,
         "consonants": {"U+0E1B": {"mark_offsets": {"tone_marks": {"U+0E48": {"x": 1.5, "y": 0}}}}},
     }
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
-    cs = load_placement_settings(path).for_consonant(0x0E1B)
-    assert _resolve(cs, ROLE_TONE_MARK, mark_uni=TONE_MAI_EK, combo_key=None) == Offset()
+    with pytest.raises(SettingsError, match="invalid settings document"):
+        load_placement_settings(path)
 
 
 def test_combo_cluster_resolves_from_combo_tier() -> None:
@@ -632,27 +647,24 @@ def test_state_single_and_combo_offsets_are_independent() -> None:
     spec_base = CompositeSpec(pua_code=0xE000, cons_uni=cons, above_uni=above)
     spec_combo = CompositeSpec(pua_code=0xE001, cons_uni=cons, above_uni=above, tone_uni=tone)
     settings = PlacementSettings()
-    apply_offset(spec_base, settings, 10, 20, category=MarkCategory.ABOVE_VOWEL)
+    settings = apply_offset(spec_base, settings, 10, 20, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(10, 20)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
     combo_key = f"{chr(above)}{chr(tone)}"
     assert settings.mark_offset_for(cons, ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=combo_key) == Offset()
-    apply_offset(spec_combo, settings, 5, -5, category=MarkCategory.ABOVE_VOWEL)
+    settings = apply_offset(spec_combo, settings, 5, -5, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
     assert settings.mark_offset_for(cons, ROLE_ABOVE_VOWEL, mark_uni=above, combo_key=combo_key) == Offset(5, -5)
-    apply_offset(spec_base, settings, 0, 0, category=MarkCategory.ABOVE_VOWEL)
+    settings = apply_offset(spec_base, settings, 0, 0, category=MarkCategory.ABOVE_VOWEL)
     assert current_mark_offset(spec_base, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(0, 0)
     assert current_mark_offset(spec_combo, settings, category=MarkCategory.ABOVE_VOWEL) == Offset(5, -5)
 
 
-def test_composer_combo_key_requires_two_marks() -> None:
-    from thaipua.core.font.composer import ThaiPuaFontGenerator
+def test_combo_key_requires_two_marks() -> None:
+    from thaipua.core.domain.settings import combo_key_for_marks
 
-    assert ThaiPuaFontGenerator._combo_key(None, VOWEL_MAI_HAN_AKAT, None) is None
-    assert (
-        ThaiPuaFontGenerator._combo_key(None, VOWEL_MAI_HAN_AKAT, TONE_MAI_EK)
-        == f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
-    )
+    assert combo_key_for_marks(None, VOWEL_MAI_HAN_AKAT, None) is None
+    assert combo_key_for_marks(None, VOWEL_MAI_HAN_AKAT, TONE_MAI_EK) == f"{chr(VOWEL_MAI_HAN_AKAT)}{chr(TONE_MAI_EK)}"
 
 
 def test_global_mark_offset_adds_to_per_consonant_and_base_tiers() -> None:
@@ -731,11 +743,11 @@ def test_apply_global_mark_offset_sets_updates_and_clears() -> None:
     from thaipua.gui.state import apply_global_mark_offset, current_global_mark_offset
 
     settings = PlacementSettings()
-    apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, -40, 0, settings)
+    settings = apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, -40, 0, settings)
     assert current_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, settings) == Offset(-40, 0)
-    apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, -35, 1, settings)
+    settings = apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, -35, 1, settings)
     assert current_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, settings) == Offset(-35, 1)
-    apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, 0, 0, settings)
+    settings = apply_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, 0, 0, settings)
     assert current_global_mark_offset(ROLE_TONE_MARK, TONE_MAI_EK, settings) == Offset()
     assert settings.marks == {}
 
@@ -744,6 +756,6 @@ def test_apply_global_mark_offset_rejects_unknown_role_or_codepoint() -> None:
     from thaipua.gui.state import apply_global_mark_offset
 
     settings = PlacementSettings()
-    apply_global_mark_offset("unknown_role", TONE_MAI_EK, -40, 0, settings)
-    apply_global_mark_offset(ROLE_TONE_MARK, CONSONANT_KO_KAI, -40, 0, settings)
+    settings = apply_global_mark_offset("unknown_role", TONE_MAI_EK, -40, 0, settings)
+    settings = apply_global_mark_offset(ROLE_TONE_MARK, CONSONANT_KO_KAI, -40, 0, settings)
     assert settings.marks == {}

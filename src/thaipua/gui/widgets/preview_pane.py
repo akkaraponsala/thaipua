@@ -17,7 +17,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from thaipua.gui import theme
-from thaipua.gui.font_service import ComponentBox, GlyphRender
+from thaipua.gui.rendering import ComponentBox, GlyphRender
 
 _GUIDE_BASELINE_COLOR = QColor("#EF4444")
 _GUIDE_CAP_COLOR = QColor("#3B82F6")

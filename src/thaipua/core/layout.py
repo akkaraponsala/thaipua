@@ -1,40 +1,60 @@
-"""Deterministic Thai-cluster-to-PUA layout: canonical assignment, deltas, storage, and conflict detection."""
+"""Deterministic Thai-cluster-to-PUA layout over the domain engine: assignment, deltas, storage, conflicts."""
 
 from __future__ import annotations
 
-import json
 import logging
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START, THAI_CONSONANT_CHARS
+from thaipua.core.domain.cluster import ThaiCluster, canonical_cluster_key, canonical_suffix, try_key
+from thaipua.core.domain.errors import LayoutError
+from thaipua.core.domain.grid import LEGAL_COMBOS, STRIDE
+from thaipua.core.domain.layout import LayoutDocument, LayoutEngine
+from thaipua.core.domain.resolution import RelocatePin, ResolveCommand, resolve
+from thaipua.core.domain.slots import is_conflict
+from thaipua.core.domain.thai import CONSONANT_INDEX
 from thaipua.core.font.occupancy import PuaOccupant
-from thaipua.core.font.ownership import SlotOwnership
-from thaipua.core.pua_map import THAI_SUFFIXES
+from thaipua.core.store.json_store import DiskJsonStore
+from thaipua.core.store.ports import JsonStore
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_CODEPOINT = 0xE000
 """Canonical layout origin; configurable per install via `layout.json`."""
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
+"""Wire-schema version written on save; versions 1 and 2 share the shape, so both load."""
 
 
 def cluster_ordinal(thai_key: str) -> int | None:
-    """Return the cluster's position in the fixed consonant-x-suffix order, or `None` when malformed."""
+    """Return the cluster's stride-60 ordinal, or `None` when malformed or outside the legal grid.
+
+    Marks in any input order canonicalize to construction order before lookup, so
+    reordered-but-valid keys resolve to the same ordinal as their stored form.
+    Consonant order comes from the domain index — the single home shared with
+    the grid — rather than rescanning the character string.
+    """
     if len(thai_key) < 1:
         return None
-    consonant, suffix = thai_key[0], thai_key[1:]
-    if consonant not in THAI_CONSONANT_CHARS or suffix not in THAI_SUFFIXES:
+    cons_index = CONSONANT_INDEX.get(ord(thai_key[0]))
+    if cons_index is None:
         return None
-    return THAI_CONSONANT_CHARS.index(consonant) * len(THAI_SUFFIXES) + THAI_SUFFIXES.index(suffix)
+    suffix = canonical_suffix(thai_key[1:])
+    if suffix is None:
+        return None
+    try:
+        return cons_index * STRIDE + LEGAL_COMBOS.index(suffix)
+    except ValueError:
+        return None
 
 
 def key_at_ordinal(ordinal: int) -> str:
-    """Return the Thai key sitting at `ordinal` in the fixed consonant-x-suffix order."""
-    consonant = THAI_CONSONANT_CHARS[ordinal // len(THAI_SUFFIXES)]
-    suffix = THAI_SUFFIXES[ordinal % len(THAI_SUFFIXES)]
+    """Return the Thai key sitting at `ordinal` in the stride-60 grid."""
+    consonant = THAI_CONSONANT_CHARS[ordinal // STRIDE]
+    suffix = LEGAL_COMBOS[ordinal % STRIDE]
     return f"{consonant}{suffix}"
 
 
@@ -45,8 +65,8 @@ def canonical_codepoint(thai_key: str, base: int) -> int | None:
 
 
 def cluster_count() -> int:
-    """Return the total number of clusters in the fixed layout grid."""
-    return len(THAI_CONSONANT_CHARS) * len(THAI_SUFFIXES)
+    """Return the codepoints spanned by one canonical block (42 consonants, stride 60)."""
+    return len(THAI_CONSONANT_CHARS) * STRIDE
 
 
 def canonical_tail_start(base: int) -> int:
@@ -65,33 +85,206 @@ def is_valid_base(base: int) -> bool:
 
 
 def canonical_layout(base: int) -> dict[str, str]:
-    """Build the full deterministic key→PUA-char map under `base`."""
-    return {key_at_ordinal(ordinal): chr(base + ordinal) for ordinal in range(cluster_count())}
+    """Build the materialized key→PUA-char map under `base`, sparse within the 2,520 block."""
+    return effective_layout(base, {})
+
+
+def _render_cluster(cluster: ThaiCluster) -> str:
+    """Render a cluster in stored construction order (`below + above + tone`)."""
+    parts = [chr(cluster.consonant.value)]
+    for mark in (cluster.below, cluster.above, cluster.tone):
+        if mark is not None:
+            parts.append(chr(mark.value))
+    return "".join(parts)
+
+
+def _engine_for(base: int, relocations: dict[str, str]) -> tuple[LayoutEngine, dict[str, str]]:
+    """Build the domain engine for the in-range pins, plus the out-of-range overlay.
+
+    Malformed entries are skipped with a warning exactly as before; pins outside
+    the PUA range stay in the overlay so the validator still sees and flags them.
+    """
+    pins: dict[ThaiCluster, int] = {}
+    overlay: dict[str, str] = {}
+    for raw_key, pua_char in relocations.items():
+        cluster = try_key(raw_key) if isinstance(raw_key, str) else None
+        if cluster is None or not isinstance(pua_char, str) or len(pua_char) != 1:
+            logger.warning("Ignoring malformed relocation %r -> %r", raw_key, pua_char)
+            continue
+        canonical = _render_cluster(cluster)
+        if not PUA_RANGE_START <= ord(pua_char) <= PUA_RANGE_END:
+            overlay[canonical] = pua_char
+            continue
+        pins[cluster] = ord(pua_char)
+    return LayoutEngine(document=LayoutDocument(base=base, relocations=pins)), overlay
 
 
 def effective_layout(base: int, relocations: dict[str, str]) -> dict[str, str]:
-    """Merge `relocations` over the canonical layout; malformed keys are ignored with a warning."""
-    mapping = canonical_layout(base)
-    for thai_key, pua_char in relocations.items():
-        if cluster_ordinal(thai_key) is None or len(pua_char) != 1:
-            logger.warning("Ignoring malformed relocation %r -> %r", thai_key, pua_char)
-            continue
-        mapping[thai_key] = pua_char
+    """Merge `relocations` over the canonical layout; malformed keys are ignored with a warning.
+
+    Ordinal math comes from the domain `LayoutEngine`, rendered back in stored
+    construction order; out-of-range pins overlay afterwards so the validator
+    still sees (and flags) them.
+    """
+    engine, overlay = _engine_for(base, relocations)
+    return _render_effective(engine, overlay)
+
+
+def _render_effective(engine: LayoutEngine, overlay: dict[str, str]) -> dict[str, str]:
+    """Render the engine map in stored construction order, then apply the out-of-range overlay."""
+    mapping = {_render_cluster(cluster): chr(codepoint) for cluster, codepoint in engine.map.items()}
+    mapping.update(overlay)
     return mapping
 
 
 @dataclass(slots=True)
 class LayoutState:
-    """Persisted layout configuration: canonical base, relocation deltas, and approved overrides."""
+    """Persisted layout configuration: canonical base, relocation deltas, and per-font approvals."""
 
     base: int = DEFAULT_BASE_CODEPOINT
     relocations: dict[str, str] = field(default_factory=dict)
-    overrides: frozenset[int] = frozenset()
-    """PUA codepoints whose locked slots the user approved for overwrite."""
+    approvals: dict[str, frozenset[int]] = field(default_factory=dict)
+    """Overwrite approvals per font session, keyed by session id; closed sessions are garbage-collected."""
+    _engine: LayoutEngine = field(init=False, repr=False, compare=False)
+    _overlay: dict[str, str] = field(init=False, repr=False, compare=False)
+    _rendered: dict[str, str] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        """Validate the raw relocations once, so later reads never re-parse."""
+        self._rebuild()
 
     def effective_map(self) -> dict[str, str]:
-        """Materialize the full key→PUA-char map this state describes."""
-        return effective_layout(self.base, self.relocations)
+        """Return a copy of the cached key→PUA-char map without revalidating."""
+        return dict(self._rendered)
+
+    @property
+    def engine(self) -> LayoutEngine:
+        """Return the held engine deriving the cached map."""
+        return self._engine
+
+    def set_base(self, base: int) -> None:
+        """Shift every relocation pin by the base delta, dropping out-of-range pins, then revalidate once."""
+        pins: dict[ThaiCluster, int] = {}
+        for thai_key, pua_char in self.relocations.items():
+            cluster = try_key(thai_key) if isinstance(thai_key, str) else None
+            if (
+                cluster is not None
+                and isinstance(pua_char, str)
+                and len(pua_char) == 1
+                and PUA_RANGE_START <= ord(pua_char) <= PUA_RANGE_END
+            ):
+                pins[cluster] = ord(pua_char)
+        engine = LayoutEngine(document=LayoutDocument(base=self.base, relocations=pins))
+        absolute = {cluster: code for cluster, code in engine.with_base(base).document.relocations.items()}
+        delta = base - self.base
+        rebuilt: dict[str, str] = {}
+        for thai_key, pua_char in self.relocations.items():
+            cluster = try_key(thai_key) if isinstance(thai_key, str) else None
+            if not isinstance(pua_char, str) or len(pua_char) != 1:
+                rebuilt[thai_key] = pua_char
+                continue
+            if cluster is not None and cluster in absolute:
+                rebuilt[thai_key] = chr(absolute[cluster])
+                continue
+            moved = ord(pua_char) + delta
+            if PUA_RANGE_START <= moved <= PUA_RANGE_END:
+                rebuilt[thai_key] = chr(moved)
+            else:
+                logger.warning("Dropping relocation %r: U+%04X falls outside the PUA range", thai_key, moved)
+        self.relocations = rebuilt
+        self.base = base
+        logger.info("Layout base moved to U+%04X", base)
+        self._rebuild()
+
+    def pin_relocations(self, moves: Mapping[str, str]) -> None:
+        """Record relocation pins, then revalidate once for the whole batch."""
+        self.relocations.update(moves)
+        self._rebuild()
+
+    def apply_edits(self, new_map: Mapping[str, str]) -> None:
+        """Fold hand-edited mapping values into relocation deltas, then revalidate once.
+
+        Only values differing from the current effective map are recorded; anything
+        else is untouched input, not intent. An explicit placement is always kept —
+        even when it equals the canonical codepoint — so the record of intent
+        survives later rebases instead of being popped.
+        """
+        pins: list[RelocatePin] = []
+        for thai_key, pua_char in new_map.items():
+            canonical = canonical_cluster_key(thai_key)
+            if canonical is None:
+                logger.warning("Ignoring manual edit with an illegal key %r", thai_key)
+                continue
+            if self._rendered.get(canonical) == pua_char:
+                continue
+            cluster = try_key(canonical)
+            if cluster is None or len(pua_char) != 1:
+                self.relocations[canonical] = pua_char
+                continue
+            pins.append(RelocatePin(cluster=cluster, codepoint=ord(pua_char)))
+        if pins:
+            self.apply_resolutions(pins)
+        logger.info("Applied %d relocation(s) after manual edit", len(self.relocations))
+        self._rebuild()
+
+    def apply_resolution(self, command: ResolveCommand) -> None:
+        """Fold one domain slot decision into the raw state, then revalidate once."""
+        self.apply_resolutions([command])
+
+    def apply_resolutions(self, commands: Iterable[ResolveCommand]) -> None:
+        """Fold several domain slot decisions, revalidating once for the whole batch.
+
+        In-range pins and approvals flow through `domain.resolve`; an out-of-range
+        pin is not representable in the engine and stays raw so the validator
+        flags it. Raw entries the engine cannot hold (illegal keys, malformed
+        values, out-of-range pins) carry over untouched.
+        """
+        pending = list(commands)
+        if not pending:
+            return
+        raw_extras: dict[str, str] = {}
+        engine = self._engine.model_copy(update={"approvals": dict(self.approvals)})
+        for command in pending:
+            if isinstance(command, RelocatePin) and not PUA_RANGE_START <= command.codepoint <= PUA_RANGE_END:
+                raw_extras[_render_cluster(command.cluster)] = chr(command.codepoint)
+            else:
+                engine = resolve(engine, command)
+        rendered: dict[str, str] = {}
+        for key, pin in engine.document.relocations.items():
+            cluster = key if isinstance(key, ThaiCluster) else ThaiCluster.from_key(str(key))
+            rendered[_render_cluster(cluster)] = chr(pin)
+        rendered.update(raw_extras)
+        rendered.update({key: value for key, value in self._overlay.items() if key not in rendered})
+        rendered.update(
+            {key: value for key, value in self.relocations.items() if key not in rendered and key not in self._overlay}
+        )
+        self.relocations = rendered
+        self.approvals = dict(engine.approvals)
+        self._rebuild()
+
+    def gc_approvals(self, live_font_ids: frozenset[str]) -> None:
+        """Drop approvals for closed font sessions through the domain engine.
+
+        Empty sessions are dropped as well, matching revocation semantics so
+        snapshot equality keeps working; approvals never affect the rendered
+        map, so no revalidation is needed.
+        """
+        engine = self._engine.model_copy(update={"approvals": dict(self.approvals)})
+        self.approvals = {
+            font_id: pins for font_id, pins in engine.gc_overrides(live_font_ids).approvals.items() if pins
+        }
+
+    def _rebuild(self) -> None:
+        """Revalidate the raw relocations into the held engine, overlay, and rendered map."""
+        self._engine, self._overlay = _engine_for(self.base, self.relocations)
+        self._rendered = _render_effective(self._engine, self._overlay)
+
+    def restore(self, base: int, relocations: dict[str, str], approvals: dict[str, frozenset[int]]) -> None:
+        """Replace the raw state, taking ownership of the dicts, then revalidate once."""
+        self.base = base
+        self.relocations = relocations
+        self.approvals = approvals
+        self._rebuild()
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,11 +299,12 @@ class LayoutConflict:
 def find_conflicts(
     mapping: dict[str, str],
     occupants: list[PuaOccupant],
-    resolved: frozenset[int] = frozenset(),
+    approved: frozenset[int] = frozenset(),
 ) -> list[LayoutConflict]:
-    """Return entries whose slots are LOCKED or REPLACEABLE, sorted by codepoint ascending.
+    """Return entries whose slots conflict per the single policy table, sorted by codepoint ascending.
 
-    Codepoints in `resolved` (user-approved overrides) are not reported.
+    Approval is not a side-channel skip: every occupied slot is judged by
+    `is_conflict()`, and approved slots simply stop conflicting.
     """
     by_codepoint = {o.codepoint: o for o in occupants}
     conflicts = []
@@ -119,9 +313,9 @@ def find_conflicts(
             continue
         codepoint = ord(pua_char)
         occupant = by_codepoint.get(codepoint)
-        if codepoint in resolved:
+        if occupant is None:
             continue
-        if occupant is not None and occupant.ownership is not SlotOwnership.OWNED:
+        if is_conflict(occupant.ownership, approved=codepoint in approved):
             conflicts.append(LayoutConflict(thai_key, codepoint, occupant))
     conflicts.sort(key=lambda c: c.codepoint)
     return conflicts
@@ -144,50 +338,98 @@ def find_relocation_target(
     return codepoint
 
 
-def load_layout_state(path: str | Path) -> LayoutState | None:
-    """Read layout configuration from `path`; `None` when missing or unreadable."""
-    try:
-        with Path(path).open(encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except FileNotFoundError:
-        return None
-    except (OSError, json.JSONDecodeError):
-        logger.warning("Failed to read layout file: %s", path, exc_info=True)
-        return None
+def parse_layout_state(payload: Any) -> LayoutState | None:
+    """Validate a decoded JSON document into layout state; `None` when malformed.
+
+    Raise `LayoutError` on an unrecognized schema version instead of loading it
+    silently. Versions 1 and 2 share the wire shape — stored relocations are
+    absolute pins, valid under either stride — so both load.
+    """
     if not isinstance(payload, dict):
-        logger.warning("Layout file has an unexpected shape; ignoring: %s", path)
+        logger.warning("Layout file has an unexpected shape; ignoring")
         return None
+    version = payload.get("version", _SCHEMA_VERSION)
+    if version not in (1, _SCHEMA_VERSION):
+        raise LayoutError(f"unsupported layout version {version}; expected {_SCHEMA_VERSION}")
     base = _parse_hex(payload.get("base"), DEFAULT_BASE_CODEPOINT)
     if not is_valid_base(base):
         logger.warning("Layout base U+%04X is outside the PUA range; using the default", base)
         base = DEFAULT_BASE_CODEPOINT
     raw_relocations = payload.get("relocations")
-    relocations = {str(k): v for k, v in raw_relocations.items()} if isinstance(raw_relocations, dict) else {}
-    overrides = _parse_overrides(payload.get("overrides"))
-    return LayoutState(base=base, relocations=relocations, overrides=overrides)
+    relocations: dict[str, str] = {}
+    if isinstance(raw_relocations, dict):
+        for raw_key, value in raw_relocations.items():
+            canonical = canonical_cluster_key(str(raw_key))
+            if canonical is None:
+                logger.warning("Ignoring relocation with an illegal key %r", raw_key)
+                continue
+            if canonical in relocations:
+                logger.warning(
+                    "Relocation %r duplicates an earlier pin after canonicalization; keeping the latter", raw_key
+                )
+            relocations[canonical] = value
+    raw_overrides = payload.get("overrides")
+    if isinstance(raw_overrides, list) and raw_overrides:
+        logger.warning("Ignoring %d global override(s): approvals are now scoped per font session", len(raw_overrides))
+    return LayoutState(base=base, relocations=relocations, approvals=_parse_approvals(payload.get("approvals")))
 
 
-def save_layout_state(state: LayoutState, path: str | Path) -> None:
-    """Write layout configuration to `path`; failures are logged rather than raised."""
-    payload = {
+def layout_state_to_dict(state: LayoutState) -> dict[str, Any]:
+    """Serialize layout state to a JSON-ready document."""
+    return {
         "version": _SCHEMA_VERSION,
         "base": f"{state.base:04X}",
         "relocations": state.relocations,
-        "overrides": sorted(f"{code:04X}" for code in state.overrides),
+        "approvals": {
+            session: sorted(f"{code:04X}" for code in codes) for session, codes in state.approvals.items() if codes
+        },
     }
+
+
+def load_layout_state(path: str | Path, *, store: JsonStore | None = None) -> LayoutState | None:
+    """Read layout configuration from `path`; `None` when missing or unreadable.
+
+    Raise `LayoutError` on an unrecognized schema version; callers fall back to
+    the canonical bootstrap the same way they do for a missing file.
+    """
+    source = store if store is not None else DiskJsonStore()
     try:
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with Path(path).open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=4)
+        payload = source.load(path)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        logger.warning("Failed to read layout file: %s", path, exc_info=True)
+        return None
+    return parse_layout_state(payload)
+
+
+def save_layout_state(state: LayoutState, path: str | Path, *, store: JsonStore | None = None) -> None:
+    """Write layout configuration to `path`; failures are logged rather than raised."""
+    source = store if store is not None else DiskJsonStore()
+    payload = layout_state_to_dict(state)
+    try:
+        source.save(path, payload)
         logger.info(
-            "Saved layout (base U+%04X, %d relocation(s), %d override(s)) to %s",
+            "Saved layout (base U+%04X, %d relocation(s), %d approval session(s)) to %s",
             state.base,
             len(state.relocations),
-            len(state.overrides),
+            len(payload["approvals"]),
             path,
         )
     except OSError:
         logger.exception("Failed to write layout file: %s", path)
+
+
+def _parse_approvals(value: Any) -> dict[str, frozenset[int]]:
+    """Interpret a JSON field as per-session hex-codepoint sets; malformed entries are skipped."""
+    if not isinstance(value, dict):
+        return {}
+    approvals: dict[str, frozenset[int]] = {}
+    for session, entries in value.items():
+        codes = _parse_overrides(entries)
+        if codes:
+            approvals[str(session)] = codes
+    return approvals
 
 
 def _parse_overrides(value: Any) -> frozenset[int]:

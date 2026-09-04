@@ -21,6 +21,7 @@ IconName = Literal[
     "file-up",
     "file-down",
     "rotate-ccw",
+    "rotate-cw",
     "search",
     "settings",
     "table",

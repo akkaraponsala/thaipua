@@ -9,9 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from thaipua.core.constants import SARA_AM_REPLACEMENTS
+from thaipua.core.domain.cluster import canonical_cluster_text
+from thaipua.core.domain.thai import NEEDS_SHAPER
 from thaipua.core.pua_map import load_pua_map_dict
 
 logger = logging.getLogger(__name__)
+
+NEEDS_SHAPER_CHARS: frozenset[str] = frozenset(chr(code) for code in NEEDS_SHAPER)
+"""Characters whose ink overlaps neighbors without a shaper; outside the cluster model by design."""
 
 
 @dataclass(slots=True, frozen=True)
@@ -50,9 +55,22 @@ def normalize_sara_am(content: str) -> str:
     return content
 
 
+def find_unshapable_spans(text: str) -> list[tuple[int, str]]:
+    """Return `(offset, char)` for every character needing a shaper, in text order.
+
+    The scan is purely about Unicode characters — it needs no encoding map, since
+    the cluster model never attempts these characters in any map.
+    """
+    return [(index, char) for index, char in enumerate(text) if char in NEEDS_SHAPER_CHARS]
+
+
 def _apply_encoding(content: str, encoding_map: PuaEncodingMap) -> str:
-    """Normalize SARA AM forms in content and substitute Thai clusters via `encoding_map`."""
-    normalized = normalize_sara_am(content)
+    """Normalize SARA AM forms and mark order, then substitute Thai clusters via `encoding_map`.
+
+    Holes (legal grid combos excluded from the shipped map) partial-match by
+    longest-match by design; the output still decodes back losslessly.
+    """
+    normalized = canonical_cluster_text(normalize_sara_am(content))
     return encoding_map.pattern.sub(lambda m: encoding_map.table[m.group(0)], normalized)
 
 

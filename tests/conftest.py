@@ -53,11 +53,6 @@ def make_glyf(**glyphs: bool) -> FakeGlyf:
     return FakeGlyf({name: FakeGlyph(composite) for name, composite in glyphs.items()})
 
 
-def make_composite(component_names: list[str]) -> FakeCompositeGlyph:
-    """Build a composite glyph exposing the given component names."""
-    return FakeCompositeGlyph(component_names)
-
-
 @pytest.fixture
 def generator() -> Iterator[ThaiPuaFontGenerator]:
     """Yield a generator over the sample font, skipping when the asset is missing."""

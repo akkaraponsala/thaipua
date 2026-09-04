@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from thaipua.core.fonttools.settings import (
+from thaipua.core.domain.settings import (
     BASE_OFFSET_ROLES,
     GLYPH_SUBSTITUTION_ROLES,
     ROLE_ABOVE_VOWEL,

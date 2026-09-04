@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from thaipua.core.domain.grid import EXCLUDED_COMBOS
+from thaipua.core.layout import canonical_layout
 from thaipua.core.text.encoding import (
     build_encode_transform,
     load_decode_table,
@@ -62,3 +64,25 @@ def test_encode_transform_normalizes_before_substituting(tmp_path: Path) -> None
     assert encoding_map is not None
     transform = build_encode_transform(encoding_map)
     assert transform("ก่ำ") == "\ue000\ue001\ue002\ue003"
+
+
+def test_hole_clusters_partial_match_but_roundtrip_losslessly(tmp_path: Path) -> None:
+    # Accepted (option a): every hole is an orthographically invalid combination,
+    # so real text never holds one; longest-match partial output still decodes
+    # back to the exact input cluster.
+    assert len(EXCLUDED_COMBOS) == 12
+    holes = sorted(suffix for suffix in EXCLUDED_COMBOS if suffix)
+    assert len(holes) == 11
+    assert all(len(suffix) == 2 for suffix in holes)
+    mapping = canonical_layout(0xE000)
+    map_path = _write_map(tmp_path, mapping)
+    encoding_map = load_encoding_map(map_path)
+    decode_table = load_decode_table(map_path)
+    assert encoding_map is not None
+    assert decode_table is not None
+    encode = build_encode_transform(encoding_map)
+    for consonant in ("ก", "ข", "ฮ"):
+        for suffix in holes:
+            cluster = consonant + suffix
+            assert encode(cluster) == mapping[cluster[:2]] + cluster[2:]
+            assert encode(cluster).translate(decode_table) == cluster

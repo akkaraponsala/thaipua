@@ -13,6 +13,8 @@ class TopToolbar(QWidget):
 
     open_font_requested = Signal()
     save_font_requested = Signal()
+    undo_requested = Signal()
+    redo_requested = Signal()
     profile_load_requested = Signal()
     profile_save_requested = Signal()
     decode_pua_requested = Signal()
@@ -34,6 +36,12 @@ class TopToolbar(QWidget):
         self._save_btn = QPushButton(self)
         self._save_btn.setIcon(icons.icon("save"))
         self._save_btn.setToolTip("Save Font")
+        self._undo_btn = QPushButton(self)
+        self._undo_btn.setIcon(icons.icon("rotate-ccw"))
+        self._undo_btn.setToolTip("Undo")
+        self._redo_btn = QPushButton(self)
+        self._redo_btn.setIcon(icons.icon("rotate-cw"))
+        self._redo_btn.setToolTip("Redo")
         self._profile_load_btn = QPushButton(self)
         self._profile_load_btn.setIcon(icons.icon("file-up"))
         self._profile_load_btn.setToolTip("Load Profile")
@@ -61,6 +69,8 @@ class TopToolbar(QWidget):
         for btn in [
             self._open_btn,
             self._save_btn,
+            self._undo_btn,
+            self._redo_btn,
             self._profile_load_btn,
             self._profile_save_btn,
             self._decode_btn,
@@ -74,6 +84,8 @@ class TopToolbar(QWidget):
             btn.setMinimumSize(28, 28)
         layout.addWidget(self._open_btn)
         layout.addWidget(self._save_btn)
+        layout.addWidget(self._undo_btn)
+        layout.addWidget(self._redo_btn)
         layout.addWidget(self._profile_load_btn)
         layout.addWidget(self._profile_save_btn)
         layout.addWidget(self._decode_btn)
@@ -85,6 +97,8 @@ class TopToolbar(QWidget):
         layout.addWidget(self._settings_btn)
         self._open_btn.clicked.connect(self.open_font_requested)
         self._save_btn.clicked.connect(self.save_font_requested)
+        self._undo_btn.clicked.connect(self.undo_requested)
+        self._redo_btn.clicked.connect(self.redo_requested)
         self._profile_load_btn.clicked.connect(self.profile_load_requested)
         self._profile_save_btn.clicked.connect(self.profile_save_requested)
         self._decode_btn.clicked.connect(self.decode_pua_requested)
@@ -94,6 +108,7 @@ class TopToolbar(QWidget):
         self._slots_btn.clicked.connect(self.pua_slots_requested)
         self._settings_btn.clicked.connect(self.settings_requested)
         self.set_font_loaded(False)
+        self.set_undo_state(False, None, False, None)
 
     def set_font_loaded(self, loaded: bool) -> None:
         """Toggle the actions that require a loaded font."""
@@ -106,10 +121,19 @@ class TopToolbar(QWidget):
         self._slots_btn.setEnabled(loaded)
         self._find_btn.setEnabled(loaded)
 
+    def set_undo_state(self, can_undo: bool, undo_label: str | None, can_redo: bool, redo_label: str | None) -> None:
+        """Toggle the undo/redo buttons, showing the step label in each tooltip."""
+        self._undo_btn.setEnabled(can_undo)
+        self._undo_btn.setToolTip(f"Undo {undo_label}" if undo_label else "Undo")
+        self._redo_btn.setEnabled(can_redo)
+        self._redo_btn.setToolTip(f"Redo {redo_label}" if redo_label else "Redo")
+
     def refresh_icons(self) -> None:
         """Re-tint every button icon for the active theme palette."""
         self._open_btn.setIcon(icons.icon("folder-open"))
         self._save_btn.setIcon(icons.icon("save"))
+        self._undo_btn.setIcon(icons.icon("rotate-ccw"))
+        self._redo_btn.setIcon(icons.icon("rotate-cw"))
         self._profile_load_btn.setIcon(icons.icon("file-up"))
         self._profile_save_btn.setIcon(icons.icon("file-down"))
         self._decode_btn.setIcon(icons.icon("file-type-corner"))

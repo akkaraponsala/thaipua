@@ -10,15 +10,17 @@ import pytest
 from conftest import SAMPLE_FONT_PATH, FakeGlyf, make_glyf
 
 from thaipua.core.constants import PUA_RANGE_END
-from thaipua.core.font.composer import ThaiPuaFontGenerator
-from thaipua.core.font.map_validation import IssueSeverity
-from thaipua.core.font.specs import CompositeSpec
-from thaipua.core.fonttools.settings import (
+from thaipua.core.domain.settings import (
     ROLE_TONE_MARK,
     ConsonantSettings,
     Offset,
     PlacementSettings,
     default_placement_settings,
+)
+from thaipua.core.font.composer import ThaiPuaFontGenerator
+from thaipua.core.font.map_validation import IssueSeverity
+from thaipua.core.font.specs import CompositeSpec
+from thaipua.core.fonttools.settings import (
     save_placement_settings,
 )
 from thaipua.core.layout import (
@@ -72,7 +74,7 @@ def test_pua_slot_context_snapshots_cmap_and_glyf() -> None:
 def test_component_boxes_are_empty_without_a_glyf_table() -> None:
     spec = CompositeSpec(pua_code=0xE000, cons_uni=0x0E01)
     service = _service_with_font({0xE000: "foreign_glyph"}, glyf=None)
-    assert service._component_boxes("foreign_glyph", spec) == []
+    assert service._renderer._component_boxes("foreign_glyph", spec) == []
 
 
 def test_validation_issues_is_empty_for_a_clean_map() -> None:
@@ -121,6 +123,40 @@ def test_override_roundtrip_persists_across_services(tmp_path: Path) -> None:
     assert fresh.allowed_locked() == frozenset({0xE601})
 
 
+def test_approvals_are_scoped_per_font_session_and_gc_on_switch(tmp_path: Path) -> None:
+    import shutil
+
+    font_a = tmp_path / "A.ttf"
+    font_b = tmp_path / "B.ttf"
+    shutil.copy(SAMPLE_FONT_PATH, font_a)
+    shutil.copy(SAMPLE_FONT_PATH, font_b)
+    service = FontService()
+    service.set_layout_path(str(tmp_path / "layout.json"))
+    service.set_pua_map_path(str(tmp_path / "pua.json"))
+
+    service.load_font(font_a)
+    service.load_layout()
+    service.override_slot(0xE600)
+    assert service.allowed_locked() == frozenset({0xE600})
+
+    service.load_font(font_b)
+    service.load_layout()
+    assert service.allowed_locked() == frozenset()
+    service.override_slot(0xE601)
+    assert service._layout is not None
+    assert set(service._layout.approvals) == {str(font_b)}
+
+    fresh = FontService()
+    fresh.set_layout_path(str(tmp_path / "layout.json"))
+    fresh.set_pua_map_path(str(tmp_path / "pua.json"))
+    fresh.load_font(font_b)
+    fresh.load_layout()
+    assert fresh.allowed_locked() == frozenset({0xE601})
+    fresh.load_font(font_a)
+    fresh.load_layout()
+    assert fresh.allowed_locked() == frozenset()
+
+
 def test_validation_issues_respects_user_overrides(tmp_path: Path) -> None:
     service = _service_with_font({0xE000: "logo"}, make_glyf(logo=False))
     service.set_layout_path(str(tmp_path / "layout.json"))
@@ -149,7 +185,7 @@ def test_load_layout_bootstraps_canonical_map_and_cache(tmp_path: Path) -> None:
     mapping = service.load_layout()
 
     assert len(mapping) == 2016
-    assert mapping["กั"] == chr(0xE000)
+    assert mapping["ก่"] == chr(0xE001)
     assert mapping == service.pua_map
     assert (tmp_path / "pua.json").is_file()
     reloaded = FontService()
@@ -158,11 +194,16 @@ def test_load_layout_bootstraps_canonical_map_and_cache(tmp_path: Path) -> None:
     assert reloaded.load_layout() == mapping
 
 
-def test_manual_edits_become_relocations_and_revert_to_canonical(tmp_path: Path) -> None:
+def test_manual_edits_record_only_touched_keys_and_keep_canonical_pins(tmp_path: Path) -> None:
     service = FontService()
     service.set_layout_path(str(tmp_path / "layout.json"))
     service.set_pua_map_path(str(tmp_path / "pua.json"))
     service.load_layout()
+
+    untouched = service.apply_manual_edits(dict(service.pua_map))
+    assert untouched == service.pua_map
+    assert service._layout is not None
+    assert service._layout.relocations == {}
 
     moved = service.apply_manual_edits({**service.pua_map, "ก่": chr(0xE900)})
     assert moved["ก่"] == chr(0xE900)
@@ -171,7 +212,24 @@ def test_manual_edits_become_relocations_and_revert_to_canonical(tmp_path: Path)
     reverted = service.apply_manual_edits({**moved, "ก่": chr(canonical_char)})
     assert reverted["ก่"] == chr(canonical_char)
     assert service._layout is not None
+    assert service._layout.relocations == {"ก่": chr(canonical_char)}
+
+
+def test_manual_edit_to_out_of_range_stays_raw_and_undoable(tmp_path: Path) -> None:
+    service = FontService()
+    service.set_layout_path(str(tmp_path / "layout.json"))
+    service.set_pua_map_path(str(tmp_path / "pua.json"))
+    service.load_layout()
+
+    remapped = service.apply_manual_edits({**service.pua_map, "ก่": chr(0x1000)})
+    assert remapped["ก่"] == chr(0x1000)
+    assert service._layout is not None
+    assert service._layout.relocations == {"ก่": chr(0x1000)}
+    assert service.undo() == "Edit PUA mapping"
+    assert service.pua_map["ก่"] == chr(0xE001)
     assert service._layout.relocations == {}
+    assert service.redo() == "Edit PUA mapping"
+    assert service.pua_map["ก่"] == chr(0x1000)
 
 
 def test_set_base_codepoint_shifts_the_whole_layout(tmp_path: Path) -> None:
@@ -182,9 +240,29 @@ def test_set_base_codepoint_shifts_the_whole_layout(tmp_path: Path) -> None:
 
     shifted = service.set_base_codepoint(0xE100)
 
-    assert shifted["กั"] == chr(0xE100)
+    assert shifted["ก่"] == chr(0xE101)
     assert service.layout_base() == 0xE100
-    assert service.layout_tail_start() == 0xE100 + 2016
+    assert service.layout_tail_start() == 0xE100 + 2520
+
+
+def test_set_base_codepoint_shifts_pins_and_drops_out_of_range(tmp_path: Path) -> None:
+    service = FontService()
+    service.set_layout_path(str(tmp_path / "layout.json"))
+    service.set_pua_map_path(str(tmp_path / "pua.json"))
+    service.load_layout()
+
+    service.apply_manual_edits({**service.pua_map, "ก่": chr(0xE900), "ข่": chr(0xF8F0)})
+    shifted = service.set_base_codepoint(0xE100)
+
+    assert shifted["ก่"] == chr(0xE900 + 0x100)
+    assert shifted["ข่"] == chr(0xE100 + 60 + 1)
+    assert service._layout is not None
+    assert service._layout.relocations == {"ก่": chr(0xE900 + 0x100)}
+
+    service.apply_manual_edits({**shifted, "ก่": chr(0xF8FF)})
+    service.set_base_codepoint(0xE200)
+    assert service._layout is not None
+    assert "ก่" not in service._layout.relocations
 
 
 def test_set_base_codepoint_rejects_bases_outside_the_pua_range(tmp_path: Path) -> None:
@@ -202,28 +280,10 @@ def test_set_base_codepoint_rejects_bases_outside_the_pua_range(tmp_path: Path) 
     assert canonical_tail_start(service.layout_base()) - 1 <= PUA_RANGE_END
 
 
-def test_state_version_bumps_on_layout_and_install_mutations(tmp_path: Path) -> None:
-    from conftest import FakeGlyf, FakeGlyph
-
-    cmap = {0xE000: "logo", 0x0E01: "ko_kai"}
-    glyf = FakeGlyf({"logo": FakeGlyph(composite=False), "ko_kai": FakeGlyph(composite=False)})
-    service = _service_with_font(cmap, glyf)
-    service.set_layout_path(str(tmp_path / "layout.json"))
-    service.set_pua_map_path(str(tmp_path / "pua.json"))
-
-    before = service.state_version
-    service.load_layout()
-    after_load = service.state_version
-    assert after_load > before
-
-    service.override_slot(0xE600)
-    assert service.state_version > after_load
-
-
 def test_override_clears_conflicts_and_relocate_key_moves_keys(tmp_path: Path) -> None:
     from conftest import FakeGlyf, FakeGlyph
 
-    conflict_cp = 0xE000
+    conflict_cp = 0xE001
     cmap = {conflict_cp: "logo", 0x0E01: "ko_kai"}
     glyf = FakeGlyf({"logo": FakeGlyph(composite=False), "ko_kai": FakeGlyph(composite=False)})
     service = _service_with_font(cmap, glyf)
@@ -245,7 +305,7 @@ def test_override_clears_conflicts_and_relocate_key_moves_keys(tmp_path: Path) -
     )
     new_cp = service.relocate_key(other_key)
     assert new_cp is not None
-    assert new_cp >= 0xE000 + 2016
+    assert new_cp >= 0xE000 + 2520
     assert service.pua_map[other_key] == chr(new_cp)
     assert service.layout_conflicts() == []
 
@@ -255,7 +315,7 @@ def test_bulk_override_and_relocate_each_persist_the_layout_once(
 ) -> None:
     from conftest import FakeGlyf, FakeGlyph
 
-    conflict_cps = [0xE000, 0xE001, 0xE002]
+    conflict_cps = [0xE001, 0xE002, 0xE003]
     cmap: dict[int, str] = {cp: f"logo{cp}" for cp in conflict_cps} | {0x0E01: "ko_kai"}
     glyf = FakeGlyf(
         {**{f"logo{cp}": FakeGlyph(composite=False) for cp in conflict_cps}, "ko_kai": FakeGlyph(composite=False)}
@@ -265,7 +325,7 @@ def test_bulk_override_and_relocate_each_persist_the_layout_once(
     service.set_pua_map_path(str(tmp_path / "pua.json"))
     mapping = service.load_layout()
     keys = sorted(
-        (key for key, char in mapping.items() if ord(char) in (0xE000, 0xE001)), key=lambda k: ord(mapping[k])
+        (key for key, char in mapping.items() if ord(char) in (0xE001, 0xE002)), key=lambda k: ord(mapping[k])
     )
 
     persist_calls = 0
@@ -286,7 +346,7 @@ def test_bulk_override_and_relocate_each_persist_the_layout_once(
     moved = service.relocate_keys(keys)
     assert len(moved) == len(keys)
     assert len(set(moved.values())) == len(keys)
-    assert all(codepoint >= 0xE000 + 2016 for codepoint in moved.values())
+    assert all(codepoint >= 0xE000 + 2520 for codepoint in moved.values())
     assert persist_calls == 2
 
 

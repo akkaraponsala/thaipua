@@ -7,6 +7,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from thaipua.core.constants import PUA_RANGE_END, PUA_RANGE_START
+from thaipua.core.domain.slots import Severity, severity
 from thaipua.core.font.ownership import SlotOwnership, classify_pua_slot
 from thaipua.core.font.specs import decompose_thai_cluster
 
@@ -59,8 +60,8 @@ def validate_pua_map(
     """Validate every mapping entry and return issues only; a clean map yields an empty list.
 
     Duplicate-value errors are reported once per involved key in a second pass.
-    Codepoints listed in `allowed_locked` carry user-granted overwrite permission:
-    their locked-slot verdict downgrades from ERROR to WARNING.
+    Slot verdicts come from the single policy table (`domain.slots`): codepoints
+    in `allowed_locked` carry user-granted overwrite permission.
     """
     issues: list[PuaMapIssue] = []
     value_owners: dict[str, list[str]] = {}
@@ -129,31 +130,20 @@ def _slot_issues(
         return
     codepoint = ord(pua_char)
     ownership = classify_pua_slot(context.cmap.get(codepoint), context.glyf)
-    if ownership is SlotOwnership.LOCKED:
-        if allowed_locked is not None and codepoint in allowed_locked:
-            out.append(
-                PuaMapIssue(
-                    thai_key,
-                    IssueSeverity.WARNING,
-                    f"U+{codepoint:04X} maps to a locked glyph; install proceeds per user override",
-                    slot_codepoint=codepoint,
-                )
-            )
-        else:
-            out.append(
-                PuaMapIssue(
-                    thai_key,
-                    IssueSeverity.ERROR,
-                    f"U+{codepoint:04X} maps to a locked glyph; installing here would be skipped",
-                    slot_codepoint=codepoint,
-                )
-            )
-    elif ownership is SlotOwnership.REPLACEABLE:
-        out.append(
-            PuaMapIssue(
-                thai_key,
-                IssueSeverity.WARNING,
-                f"U+{ord(pua_char):04X} maps to a foreign composite that would be replaced",
-                slot_codepoint=codepoint,
-            )
+    slot_severity = severity(ownership, approved=allowed_locked is not None and codepoint in allowed_locked)
+    if slot_severity is Severity.OK:
+        return
+    if ownership is SlotOwnership.REPLACEABLE:
+        message = f"U+{codepoint:04X} maps to a foreign composite that would be replaced"
+    elif slot_severity is Severity.WARNING:
+        message = f"U+{codepoint:04X} maps to a locked glyph; install proceeds per user override"
+    else:
+        message = f"U+{codepoint:04X} maps to a locked glyph; installing here would be skipped"
+    out.append(
+        PuaMapIssue(
+            thai_key,
+            IssueSeverity.WARNING if slot_severity is Severity.WARNING else IssueSeverity.ERROR,
+            message,
+            slot_codepoint=codepoint,
         )
+    )

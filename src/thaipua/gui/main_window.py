@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fontTools.ttLib import TTLibError
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QCloseEvent, QPainterPath
+from PySide6.QtGui import QCloseEvent, QKeySequence, QPainterPath, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -22,11 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from thaipua.core.font.composer import InstallStatus
-from thaipua.core.font.map_validation import IssueSeverity, PuaMapIssue
-from thaipua.core.font.ownership import SlotOwnership
-from thaipua.core.font.specs import CompositeSpec
-from thaipua.core.fonttools.settings import (
+from thaipua.core.domain.errors import SettingsError
+from thaipua.core.domain.settings import (
     SUB_ABOVE_VOWEL,
     SUB_BELOW_VOWEL,
     SUB_CONSONANT,
@@ -34,11 +31,14 @@ from thaipua.core.fonttools.settings import (
     PlacementSettings,
     default_placement_settings,
 )
+from thaipua.core.font.composer import InstallStatus
+from thaipua.core.font.map_validation import IssueSeverity, PuaMapIssue
+from thaipua.core.font.ownership import SlotOwnership
+from thaipua.core.font.specs import CompositeSpec
 from thaipua.core.layout import LayoutConflict
-from thaipua.core.paths import DEFAULT_PROFILES_DIR
-from thaipua.core.text.file_codec import decode_files, encode_files
+from thaipua.core.text.file_codec import UnshapableReport, decode_files, encode_files
 from thaipua.gui import icons, theme
-from thaipua.gui.font_service import FontService
+from thaipua.gui.font_service import FontService, ProfileAutoLoad
 from thaipua.gui.state import (
     GRID_PAGE_SIZE,
     AppState,
@@ -77,9 +77,6 @@ TEXT_FILTER = "Text / string-table files (*.txt *.strings *.dlstrings *.ilstring
 _SAVE_BLOCK_PREVIEW_LIMIT = 8
 """Maximum mapping issues listed in the save-blocked dialog before an ellipsis line."""
 
-_SKIP_INSTALL_STATUSES = frozenset({InstallStatus.SKIPPED_LOCKED, InstallStatus.SKIPPED_MISSING_CONSONANT})
-"""Install outcomes that leave the slot untouched, so the composite must not count as installed."""
-
 
 def _compress_runs(codepoints: list[int]) -> list[tuple[int, int]]:
     """Collapse sorted codepoints into inclusive (start, end) ranges for compact display."""
@@ -105,24 +102,24 @@ class MainWindow(QMainWindow):
         self.resize(1520, 855)
         self._state = AppState()
         self._service = FontService()
-        self._pua_index: dict[int, CompositeSpec] = {}
-        self._codepoint_keys: dict[int, str] = {}
         self._current_category: MarkCategory | None = None
         self._sub_catalog: dict[str, list[GlyphSubstitution]] = {}
-        self._settings_generation = 0
-        self._installed_generations: dict[int, int] = {}
         self._occupancy_dialog: OccupancyDialog | None = None
-        self._conflicts_cache: tuple[int, list[LayoutConflict]] | None = None
         self._last_occupancy_notice: str | None = None
         self._grid_refresh_timer = QTimer(self)
         self._grid_refresh_timer.setSingleShot(True)
         self._grid_refresh_timer.setInterval(300)
         self._grid_refresh_timer.timeout.connect(self._refresh_grid_pane)
+        self._undo_shortcut = QShortcut(QKeySequence(QKeySequence.StandardKey.Undo), self)
+        self._undo_shortcut.activated.connect(self._on_undo)
+        self._redo_shortcut = QShortcut(QKeySequence(QKeySequence.StandardKey.Redo), self)
+        self._redo_shortcut.activated.connect(self._on_redo)
         self._build_layout()
         self._connect_signals()
         theme.apply_theme(mode=theme.load_theme_mode())
         self._refresh_theme_surfaces()
         self._refresh_footer()
+        self._sync_undo_actions()
 
     def _build_layout(self) -> None:
         """Assemble toolbar, three-column splitter, and footer into the main window."""
@@ -153,6 +150,8 @@ class MainWindow(QMainWindow):
         toolbar = self._toolbar
         toolbar.open_font_requested.connect(self._on_open_font)
         toolbar.save_font_requested.connect(self._on_save_font)
+        toolbar.undo_requested.connect(self._on_undo)
+        toolbar.redo_requested.connect(self._on_redo)
         toolbar.profile_load_requested.connect(self._on_load_profile)
         toolbar.profile_save_requested.connect(self._on_save_profile)
         toolbar.decode_pua_requested.connect(self._on_decode_pua)
@@ -188,7 +187,7 @@ class MainWindow(QMainWindow):
         progress.show()
         QApplication.processEvents()
         try:
-            self._service.load_font(path, profiles_dir=DEFAULT_PROFILES_DIR)
+            status = self._service.load_font(path)
         except (TTLibError, OSError) as exc:
             progress.close()
             logger.exception("Failed to open font %s", path)
@@ -196,17 +195,31 @@ class MainWindow(QMainWindow):
             return
         progress.close()
         self._state.font_path = path
-        self._state.pua_map = self._service.load_layout()
+        self._service.load_layout()
+        if status is ProfileAutoLoad.APPLIED:
+            logger.info("Auto-loaded the saved profile for this font")
+        elif status is ProfileAutoLoad.LEGACY:
+            QMessageBox.information(
+                self,
+                "Open Font",
+                "Found a saved profile for this file name, but it predates font-identity stamping, "
+                "so it was not applied.\n\nIf it belongs to this font, load it once via Load Profile "
+                "and save it again to adopt it.",
+            )
+        elif status is ProfileAutoLoad.UNREADABLE:
+            QMessageBox.warning(
+                self,
+                "Open Font",
+                "The saved profile for this font could not be read, so defaults were loaded.\n\n"
+                "Delete it or save a fresh profile to stop seeing this warning.",
+            )
         self._sub_catalog = self._service.find_substitutions()
-        self._rebuild_pua_index()
-        self._settings_generation = 0
-        self._installed_generations = {}
-        self._state.settings = default_placement_settings()
         self._state.active_consonant_uni = None
         self._state.active_pua_code = None
         self._state.consonants_page = 0
         self._state.pua_page = 0
         self._state.dirty = False
+        self._sync_undo_actions()
         self._grid_pane.set_font_loaded(True)
         self._toolbar.set_font_loaded(True)
         self._controls_pane.set_font_loaded(True)
@@ -221,7 +234,7 @@ class MainWindow(QMainWindow):
         """Pick a destination and write the rebuilt font through `FontService`."""
         errors = [
             issue
-            for issue in self._service.validation_issues(self._state.pua_map)
+            for issue in self._service.validation_issues(self._service.pua_map)
             if issue.severity is IssueSeverity.ERROR
         ]
         if errors:
@@ -245,7 +258,7 @@ class MainWindow(QMainWindow):
             QApplication.processEvents()
 
         try:
-            self._service.save_font(path, self._state.settings, self._state.pua_map, progress=on_progress)
+            self._service.save_font(path, self._service.settings, self._service.pua_map, progress=on_progress)
         except (TTLibError, OSError) as exc:
             progress.close()
             logger.exception("Failed to save font to %s", path)
@@ -253,7 +266,6 @@ class MainWindow(QMainWindow):
             return None
         progress.setValue(progress.maximum())
         progress.close()
-        self._installed_generations = {pua: self._settings_generation for pua in self._pua_index}
         self._state.dirty = False
         self._refresh_footer()
         QMessageBox.information(self, "Save Font", f"Saved:\n{path}")
@@ -262,11 +274,15 @@ class MainWindow(QMainWindow):
         """Pick a profile JSON file and replace the live placement settings with it."""
         if not self._service.is_loaded:
             return
-        start = str(self._service.default_profile_path() or DEFAULT_PROFILES_DIR)
+        start = str(self._service.default_profile_path() or self._service.root.profiles_dir)
         path, _ = QFileDialog.getOpenFileName(self, "Load Profile", start, PROFILE_FILTER)
         if not path:
             return
-        self._replace_placement_settings(self._service.load_profile(path))
+        try:
+            self._replace_placement_settings(self._service.load_profile(path), label="Load profile")
+        except SettingsError as exc:
+            logger.exception("Failed to load profile %s", path)
+            QMessageBox.critical(self, "Load Profile", f"Could not load profile:\n{exc}")
 
     def _on_save_profile(self) -> None:
         """Pick a destination and write the current placement settings as profile JSON."""
@@ -277,7 +293,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            target = self._service.save_profile(path, self._state.settings)
+            target = self._service.save_profile(path, self._service.settings)
         except OSError as exc:
             logger.exception("Failed to save profile to %s", path)
             QMessageBox.critical(self, "Save Profile", f"Could not save profile:\n{exc}")
@@ -297,22 +313,22 @@ class MainWindow(QMainWindow):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        self._replace_placement_settings(default_placement_settings())
+        self._replace_placement_settings(default_placement_settings(), label="Reset placement defaults")
 
-    def _replace_placement_settings(self, settings: PlacementSettings) -> None:
-        """Swap in `settings`, invalidate installed composites, and refresh every dependent view."""
-        self._state.settings = settings
-        self._settings_generation += 1
-        self._installed_generations = {}
+    def _replace_placement_settings(self, settings: PlacementSettings, *, label: str) -> None:
+        """Swap in `settings` as one undo step, reinstalling the active preview, and refresh every dependent view."""
+        self._service.replace_settings(settings, label=label)
         self._state.dirty = True
         self._refresh_footer()
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
+        self._controls_pane.load_global_marks(self._service.settings)
         pua_code = self._state.active_pua_code
         if pua_code is not None:
             self._on_pua_clicked(pua_code)
         elif self._state.active_consonant_uni is not None:
             self._controls_pane.load_consonant_settings(
-                self._state.active_consonant_uni, self._state.settings, self._sub_catalog
+                self._state.active_consonant_uni, self._service.settings, self._sub_catalog
             )
 
     def _report_mapping_errors(self, errors: list[PuaMapIssue]) -> None:
@@ -345,16 +361,34 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, "Encode Thai → PUA", "", TEXT_FILTER)
         if not paths:
             return
-        written, failed = encode_files(self._service.pua_map_path, [Path(p) for p in paths])
-        self._report_file_codec("Encode Thai → PUA", "Encoded", written, failed)
+        written, failed, unshapable = encode_files(self._service.pua_map_path, [Path(p) for p in paths], strict=True)
+        self._report_file_codec("Encode Thai → PUA", "Encoded", written, failed, unshapable)
 
-    def _report_file_codec(self, title: str, verb: str, written: int, failed: int) -> None:
+    def _report_file_codec(
+        self,
+        title: str,
+        verb: str,
+        written: int,
+        failed: int,
+        unshapable: Sequence[UnshapableReport] = (),
+    ) -> None:
         """Surface an honest encode/decode outcome, warning when any file failed."""
         if failed:
             QMessageBox.warning(
                 self,
                 title,
                 f"{verb} {written} file(s); {failed} file(s) failed. See the log for details.",
+            )
+        elif unshapable:
+            lines = [
+                f"{Path(report.source).name}: {''.join(report.characters)} ({report.occurrences} occurrence(s))"
+                for report in unshapable[:_SAVE_BLOCK_PREVIEW_LIMIT]
+            ]
+            QMessageBox.warning(
+                self,
+                title,
+                f"{verb} {written} file(s); {len(unshapable)} file(s) hold characters "
+                "a PUA font cannot render. See the log for details.\n\n" + "\n".join(lines),
             )
         else:
             QMessageBox.information(self, title, f"{verb} {written} file(s).")
@@ -376,7 +410,7 @@ class MainWindow(QMainWindow):
     def _open_mapping_dialog(self, initial_query: str | None = None) -> None:
         """Run the mapping editor, optionally pre-filtered; persist an accepted result."""
         dialog = PuaMappingDialog(
-            dict(self._state.pua_map),
+            dict(self._service.pua_map),
             self._service.pua_slot_context(),
             self,
             allowed_locked=self._service.allowed_locked(),
@@ -387,13 +421,13 @@ class MainWindow(QMainWindow):
             return
         new_map = dialog.result_mapping()
         dialog.deleteLater()
-        if new_map == self._state.pua_map:
+        if new_map == self._service.pua_map:
             return
-        self._state.pua_map = self._service.apply_manual_edits(new_map)
-        self._rebuild_pua_index()
+        self._service.apply_manual_edits(new_map)
         self._state.dirty = True
         self._refresh_footer()
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
 
     def _on_pua_slots(self) -> None:
         """Open the foreign-slot report; its actions route through `FontService` mutations."""
@@ -414,7 +448,7 @@ class MainWindow(QMainWindow):
     def _build_occupancy_rows(self) -> list[OccupancyRow]:
         """Snapshot foreign slots with thumbnails and mapping context for the report."""
         rows = []
-        mapped_codes = {ord(char) for char in self._state.pua_map.values()}
+        mapped_codes = {ord(char) for char in self._service.pua_map.values()}
         allowed = self._service.allowed_locked()
         for occupant in self._service.pua_occupants():
             if occupant.ownership is SlotOwnership.OWNED:
@@ -438,7 +472,7 @@ class MainWindow(QMainWindow):
         else:
             self._service.clear_override(codepoint)
         logger.info("User %s the override for U+%04X", "approved" if approve else "revoked", codepoint)
-        self._refresh_after_resolutions(layout_changed=False, invalidated=(codepoint,))
+        self._refresh_after_resolutions(invalidated=(codepoint,))
 
     def _on_remap_requested(self, codepoint: int) -> None:
         """Open the mapping editor pre-filtered to the key occupying `codepoint`."""
@@ -447,11 +481,8 @@ class MainWindow(QMainWindow):
             self._occupancy_dialog.refresh(self._build_occupancy_rows())
 
     def _current_conflicts(self) -> list[LayoutConflict]:
-        """Return layout-vs-font conflicts, rescanning only after a service mutation."""
-        version = self._service.state_version
-        if self._conflicts_cache is None or self._conflicts_cache[0] != version:
-            self._conflicts_cache = (version, self._service.layout_conflicts())
-        return self._conflicts_cache[1]
+        """Return layout-vs-font conflicts, rescanned from the live font on every call."""
+        return self._service.layout_conflicts()
 
     def _update_occupancy_notice(self) -> None:
         """Summarize unresolved layout-vs-font conflicts into the footer notice.
@@ -481,28 +512,20 @@ class MainWindow(QMainWindow):
 
     def _key_for_codepoint(self, codepoint: int) -> str | None:
         """Return the Thai key currently mapped onto `codepoint`, or `None`."""
-        return self._codepoint_keys.get(codepoint)
+        spec = self._spec_index().get(codepoint)
+        return spec.thai_key if spec is not None else None
 
-    def _refresh_after_resolutions(self, *, layout_changed: bool, invalidated: Iterable[int] = ()) -> None:
-        """Propagate override/relocate resolutions into state and every dependent view.
-
-        `invalidated` lists codepoints whose approval changed; their cached
-        installed-generation entries drop so the active preview re-renders from a
-        fresh install attempt instead of painting the stale occupant.
-        """
-        if layout_changed:
-            self._state.pua_map = self._service.pua_map
-            self._rebuild_pua_index()
+    def _refresh_after_resolutions(self, *, invalidated: Iterable[int] = ()) -> None:
+        """Refresh every surface reflecting resolutions, reinstalling the active preview when touched."""
         touched = set(invalidated)
-        for codepoint in touched:
-            self._installed_generations.pop(codepoint, None)
         self._state.dirty = True
         self._refresh_footer()
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
         if self._occupancy_dialog is not None:
             self._occupancy_dialog.refresh(self._build_occupancy_rows())
         pua_code = self._state.active_pua_code
-        if pua_code is not None and pua_code in touched and pua_code in self._pua_index:
+        if pua_code is not None and pua_code in touched:
             self._on_pua_clicked(pua_code)
 
     def _on_relocate_requested(self, codepoint: int) -> None:
@@ -513,12 +536,12 @@ class MainWindow(QMainWindow):
             return
         if self._service.relocate_key(thai_key) is None:
             return
-        self._refresh_after_resolutions(layout_changed=True)
+        self._refresh_after_resolutions()
 
     def _on_bulk_override(self) -> None:
         """Approve overrides for every mapped locked slot still holding foreign content."""
         allowed = self._service.allowed_locked()
-        mapped_codes = {ord(char) for char in self._state.pua_map.values() if len(char) == 1}
+        mapped_codes = {ord(char) for char in self._service.pua_map.values() if len(char) == 1}
         targets = [
             o.codepoint
             for o in self._service.pua_occupants()
@@ -526,14 +549,14 @@ class MainWindow(QMainWindow):
         ]
         if not targets or not self._service.override_slots(targets):
             return
-        self._refresh_after_resolutions(layout_changed=False, invalidated=targets)
+        self._refresh_after_resolutions(invalidated=targets)
 
     def _on_bulk_relocate(self) -> None:
         """Relocate every Thai key whose slot still conflicts with the font."""
         keys = [c.thai_key for c in self._current_conflicts()]
         if not keys or not self._service.relocate_keys(keys):
             return
-        self._refresh_after_resolutions(layout_changed=True)
+        self._refresh_after_resolutions()
 
     def _on_bulk_remap(self) -> None:
         """Open the mapping editor pre-filtered to every slot still conflicting."""
@@ -544,11 +567,44 @@ class MainWindow(QMainWindow):
 
     def _on_base_changed(self, base: int) -> None:
         """Rebase the canonical layout, refresh every view, then surface any new conflicts."""
-        self._state.pua_map = self._service.set_base_codepoint(base)
-        self._rebuild_pua_index()
+        self._service.set_base_codepoint(base)
         self._state.dirty = True
         self._refresh_footer()
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
+
+    def _on_undo(self) -> None:
+        """Undo one project step and refresh every settings/layout-dependent surface."""
+        if self._service.undo() is None:
+            return
+        self._refresh_after_undo()
+
+    def _on_redo(self) -> None:
+        """Re-apply the latest undone step and refresh every settings/layout-dependent surface."""
+        if self._service.redo() is None:
+            return
+        self._refresh_after_undo()
+
+    def _refresh_after_undo(self) -> None:
+        """Refresh every surface after an undo/redo, reloading controls from the restored settings."""
+        self._state.dirty = True
+        self._refresh_footer()
+        self._schedule_grid_refresh()
+        self._sync_undo_actions()
+        self._controls_pane.load_global_marks(self._service.settings)
+        pua_code = self._state.active_pua_code
+        if pua_code is not None:
+            self._on_pua_clicked(pua_code)
+        elif self._state.active_consonant_uni is not None:
+            self._controls_pane.load_consonant_settings(
+                self._state.active_consonant_uni, self._service.settings, self._sub_catalog
+            )
+
+    def _sync_undo_actions(self) -> None:
+        """Push the session's undo/redo availability and labels into the toolbar."""
+        self._toolbar.set_undo_state(
+            self._service.can_undo, self._service.undo_label, self._service.can_redo, self._service.redo_label
+        )
 
     def _on_settings(self) -> None:
         """Open the preferences dialog with live theme and layout-base switching."""
@@ -588,34 +644,28 @@ class MainWindow(QMainWindow):
         self._state.active_pua_code = None
         self._refresh_grid_pane()
         self._render_codepoint(cons_uni)
-        self._controls_pane.load_consonant_settings(cons_uni, self._state.settings, self._sub_catalog)
+        self._controls_pane.load_consonant_settings(cons_uni, self._service.settings, self._sub_catalog)
         self._controls_pane.set_enabled(False)
 
     def _on_pua_clicked(self, pua_code: int) -> None:
         """Mark `pua_code` selected and load its preview and controls."""
         self._controls_pane.flush_offset_commit()
         self._state.active_pua_code = pua_code
-        spec = self._pua_index.get(pua_code)
+        spec = self._active_spec()
         if spec is None:
             return
-        if (
-            self._service.has_codepoint(pua_code)
-            and self._installed_generations.get(pua_code) == self._settings_generation
-        ):
-            self._render_installed_spec(spec)
-        else:
-            self._render_pua_spec(spec)
+        self._render_pua_spec(spec)
         self._grid_pane.set_selected(pua_code)
         category = infer_category(spec)
         if category is None:
             self._controls_pane.set_enabled(False)
             return
         self._current_category = category
-        offset = current_mark_offset(spec, self._state.settings, category=category)
+        offset = current_mark_offset(spec, self._service.settings, category=category)
         self._controls_pane.set_enabled(True, categories_for(spec))
         self._controls_pane.load_offset(offset.x, offset.y, category)
-        self._controls_pane.load_spec_mark_substitutions(spec, self._state.settings, self._sub_catalog)
-        self._controls_pane.load_consonant_sub_for_spec(spec, self._state.settings, self._sub_catalog, spec.cons_uni)
+        self._controls_pane.load_spec_mark_substitutions(spec, self._service.settings, self._sub_catalog)
+        self._controls_pane.load_consonant_sub_for_spec(spec, self._service.settings, self._sub_catalog, spec.cons_uni)
 
     def _on_back_to_consonants(self) -> None:
         """Reset to the consonant index page."""
@@ -646,39 +696,52 @@ class MainWindow(QMainWindow):
         self._refresh_grid_pane()
 
     def _on_offset_changed(self, x: int, y: int) -> None:
-        """Commit a live mark-offset edit and refresh the previews."""
+        """Commit a live mark-offset edit as one undo step and refresh the previews."""
         spec = self._active_spec()
         if spec is None or self._current_category is None:
             return None
-        self._settings_generation += 1
-        apply_offset(spec, self._state.settings, x, y, category=self._current_category)
+        category = self._current_category
+        self._service.execute_settings(
+            f"Offset {spec.thai_key}",
+            lambda settings: apply_offset(spec, settings, x, y, category=category),
+            coalesce_key=f"offset:{spec.thai_key}:{category.value}",
+        )
         self._render_pua_spec(spec, mark_dirty=True)
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
 
     def _on_base_offset_changed(self, role: str, x: int, y: int) -> None:
-        """Commit a base-offset edit for `role` and refresh the previews."""
+        """Commit a base-offset edit for `role` as one undo step and refresh the previews."""
         cons_uni = self._state.active_consonant_uni
         if cons_uni is None:
             return
-        self._settings_generation += 1
-        apply_base_offset(cons_uni, role, x, y, self._state.settings)
+        self._service.execute_settings(
+            f"Base offset {chr(cons_uni)}",
+            lambda settings: apply_base_offset(cons_uni, role, x, y, settings),
+            coalesce_key=f"base-offset:{cons_uni}:{role}",
+        )
         self._state.dirty = True
         self._refresh_footer()
         spec = self._active_spec()
         if spec is not None:
             self._render_pua_spec(spec)
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
 
     def _on_global_mark_offset_changed(self, role: str, mark_uni: int, x: int, y: int) -> None:
-        """Commit a font-global mark-offset edit and refresh every composite carrying `mark_uni`."""
-        self._settings_generation += 1
-        apply_global_mark_offset(role, mark_uni, x, y, self._state.settings)
+        """Commit a font-global mark-offset edit as one undo step and refresh every composite carrying `mark_uni`."""
+        self._service.execute_settings(
+            f"Global offset {chr(mark_uni)}",
+            lambda settings: apply_global_mark_offset(role, mark_uni, x, y, settings),
+            coalesce_key=f"global-offset:{role}:{mark_uni}",
+        )
         self._state.dirty = True
         self._refresh_footer()
         spec = self._active_spec()
         if spec is not None:
             self._render_pua_spec(spec)
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
 
     def _on_glyph_substitution_changed(self, role: str, glyph_name: str) -> None:
         """Commit a substitution override for the active role and context, then refresh the previews.
@@ -709,9 +772,12 @@ class MainWindow(QMainWindow):
                 return None
         if codepoint is None:
             return
-        self._settings_generation += 1
-        apply_glyph_substitution(
-            codepoint, cons_uni, glyph_name or None, self._state.settings, conditions=present_roles
+        self._service.execute_settings(
+            f"Substitution U+{codepoint:04X}",
+            lambda settings: apply_glyph_substitution(
+                codepoint, cons_uni, glyph_name or None, settings, conditions=present_roles
+            ),
+            coalesce_key=f"substitution:{cons_uni}:{codepoint}",
         )
         self._state.dirty = True
         self._refresh_footer()
@@ -719,20 +785,25 @@ class MainWindow(QMainWindow):
         if spec_after is not None:
             self._render_pua_spec(spec_after)
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
 
     def _on_snap_changed(self, snap_name: str, enabled: bool, gap: int) -> None:
-        """Commit a snap toggle or gap change and refresh the previews."""
+        """Commit a snap toggle or gap change as one undo step and refresh the previews."""
         cons_uni = self._state.active_consonant_uni
         if cons_uni is None:
             return
-        self._settings_generation += 1
-        apply_snap(cons_uni, snap_name, enabled, gap, self._state.settings)
+        self._service.execute_settings(
+            f"Snap {chr(cons_uni)}",
+            lambda settings: apply_snap(cons_uni, snap_name, enabled, gap, settings),
+            coalesce_key=f"snap:{cons_uni}:{snap_name}",
+        )
         self._state.dirty = True
         self._refresh_footer()
         spec = self._active_spec()
         if spec is not None:
             self._render_pua_spec(spec)
         self._schedule_grid_refresh()
+        self._sync_undo_actions()
 
     def _on_category_changed(self, category: object) -> None:
         """Reload the X/Y inputs for the newly selected category's role."""
@@ -741,7 +812,7 @@ class MainWindow(QMainWindow):
             return None
         self._controls_pane.flush_offset_commit()
         self._current_category = category
-        offset = current_mark_offset(spec, self._state.settings, category=category)
+        offset = current_mark_offset(spec, self._service.settings, category=category)
         self._controls_pane.load_offset(offset.x, offset.y, category)
         spec_active = self._state.active_pua_code is not None
         self._controls_pane.set_enabled(spec_active, categories_for(spec))
@@ -764,45 +835,29 @@ class MainWindow(QMainWindow):
             self._preview_pane.set_metadata(spec.pua_code, None)
             return
         path = QPainterPath()
-        render = self._service.regenerate_composite(spec, self._state.settings, path)
+        render = self._service.regenerate_composite(spec, self._service.settings, path)
         if render.install_status is InstallStatus.REPLACED_FOREIGN_COMPOSITE:
             logger.warning("U+%04X replaced a foreign composite in place", spec.pua_code)
-        if render.install_status is not None and render.install_status in _SKIP_INSTALL_STATUSES:
-            self._installed_generations.pop(spec.pua_code, None)
-        else:
-            self._installed_generations[spec.pua_code] = self._settings_generation
         self._preview_pane.set_metadata(spec.pua_code, render.glyph_name)
         self._preview_pane.set_render(render, path)
         if mark_dirty:
             self._state.dirty = True
             self._refresh_footer()
 
-    def _render_installed_spec(self, spec: CompositeSpec) -> None:
-        """Paint an already-installed composite without rebuilding it."""
-        if not self._service.is_loaded:
-            self._preview_pane.clear()
-            self._preview_pane.set_metadata(spec.pua_code, None)
-            return
-        path = QPainterPath()
-        render = self._service.render_glyph(spec.pua_code, path, spec=spec)
-        self._preview_pane.set_metadata(spec.pua_code, render.glyph_name)
-        self._preview_pane.set_render(render, path)
-
     def _active_spec(self) -> CompositeSpec | None:
         """Return the spec for the currently selected PUA codepoint, or `None`."""
         pua_code = self._state.active_pua_code
         if pua_code is None:
             return None
-        return self._pua_index.get(pua_code)
+        return self._spec_index().get(pua_code)
 
-    def _rebuild_pua_index(self) -> None:
-        """Rebuild the `pua_code → CompositeSpec` index and codepoint→key map from `state.pua_map`."""
+    def _spec_index(self) -> dict[int, CompositeSpec]:
+        """Index the live map's composite specs by PUA codepoint, derived on demand."""
         index: dict[int, CompositeSpec] = {}
-        for _cons_uni, specs in group_composites_by_consonant(self._state.pua_map).items():
+        for specs in group_composites_by_consonant(self._service.pua_map).values():
             for spec in specs:
                 index[spec.pua_code] = spec
-        self._pua_index = index
-        self._codepoint_keys = {ord(char): key for key, char in self._state.pua_map.items() if len(char) == 1}
+        return index
 
     def _refresh_grid_pane(self) -> None:
         """Re-render the grid pane per the current view-state and pagination."""
@@ -824,7 +879,7 @@ class MainWindow(QMainWindow):
         start = page * GRID_PAGE_SIZE
         slice_items = cons[start : start + GRID_PAGE_SIZE]
         ref_ascent, ref_descent = self._service.display_extents() if self._service.is_loaded else (0.0, 0.0)
-        groups = group_composites_by_consonant(self._state.pua_map)
+        groups = group_composites_by_consonant(self._service.pua_map)
         visuals = []
         for cp in slice_items:
             path: QPainterPath | None = None
@@ -852,7 +907,7 @@ class MainWindow(QMainWindow):
         cons_uni = self._state.active_consonant_uni
         if cons_uni is None:
             return
-        specs = pua_specs_for_consonant(self._state.pua_map, cons_uni)
+        specs = pua_specs_for_consonant(self._service.pua_map, cons_uni)
         total_pages = max(1, (len(specs) + GRID_PAGE_SIZE - 1) // GRID_PAGE_SIZE)
         self._state.pua_page = max(0, min(self._state.pua_page, total_pages - 1))
         page = self._state.pua_page
@@ -864,7 +919,7 @@ class MainWindow(QMainWindow):
             path: QPainterPath | None = None
             if self._service.is_loaded:
                 cell_path = QPainterPath()
-                if self._service.render_composite_path(spec, self._state.settings, cell_path) is not None:
+                if self._service.render_composite_path(spec, self._service.settings, cell_path) is not None:
                     path = cell_path
             visuals.append(
                 CellVisual(

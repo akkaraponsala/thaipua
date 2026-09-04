@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from thaipua.core.constants import PUA_RANGE_END
+from thaipua.core.store.json_store import DiskJsonStore
+from thaipua.core.store.ports import JsonStore
 
 logger = logging.getLogger(__name__)
 
@@ -62,18 +64,8 @@ THAI_SUFFIXES: list[str] = [
 ]
 
 
-def load_pua_map_dict(dict_path: str | Path) -> dict[str, str]:
-    """Read a Thai-to-PUA mapping file, skipping malformed entries; return an empty dict on failure."""
-    logger.info("Loading PUA map: '%s'", dict_path)
-    path = Path(dict_path)
-    if not path.exists():
-        logger.error("Map file not found: '%s'", dict_path)
-        return {}
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        logger.exception("Failed to parse map file: '%s'", dict_path)
-        return {}
+def parse_pua_map_payload(raw: Any) -> dict[str, str]:
+    """Validate a decoded JSON document into a Thai-to-PUA map, skipping malformed entries."""
     if not isinstance(raw, dict):
         return {}
     mapping = {}
@@ -88,6 +80,21 @@ def load_pua_map_dict(dict_path: str | Path) -> dict[str, str]:
     return mapping
 
 
+def load_pua_map_dict(dict_path: str | Path, *, store: JsonStore | None = None) -> dict[str, str]:
+    """Read a Thai-to-PUA mapping file, skipping malformed entries; return an empty dict on failure."""
+    logger.info("Loading PUA map: '%s'", dict_path)
+    source = store if store is not None else DiskJsonStore()
+    try:
+        raw = source.load(dict_path)
+    except FileNotFoundError:
+        logger.error("Map file not found: '%s'", dict_path)
+        return {}
+    except (OSError, ValueError):
+        logger.exception("Failed to parse map file: '%s'", dict_path)
+        return {}
+    return parse_pua_map_payload(raw)
+
+
 def next_free_codepoint(start_pua: int, used_pua_chars: set[str]) -> int:
     """Return the lowest unused PUA codepoint at or above `start_pua`."""
     codepoint = start_pua
@@ -98,14 +105,14 @@ def next_free_codepoint(start_pua: int, used_pua_chars: set[str]) -> int:
     return codepoint
 
 
-def save_pua_map(mapping: dict[str, str], path: str | Path) -> None:
+def save_pua_map(mapping: dict[str, str], path: str | Path, *, store: JsonStore | None = None) -> None:
     """Persist `mapping` to `path` as UTF-8 JSON.
 
     Write failures are logged rather than raised.
     """
+    source = store if store is not None else DiskJsonStore()
     try:
-        with Path(path).open("w", encoding="utf-8") as handle:
-            json.dump(mapping, handle, ensure_ascii=False, indent=4)
+        source.save(path, mapping)
         logger.info("Saved %d entries to %s", len(mapping), path)
     except OSError:
         logger.exception("Failed to write map file: %s", path)

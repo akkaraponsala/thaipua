@@ -129,7 +129,7 @@ def test_missing_consonant_is_reported_not_raised(generator: ThaiPuaFontGenerato
 
 
 def test_global_mark_offset_shifts_composed_tone_component(generator: ThaiPuaFontGenerator) -> None:
-    from thaipua.core.fonttools.settings import ROLE_TONE_MARK, Offset, PlacementSettings
+    from thaipua.core.domain.settings import ROLE_TONE_MARK, Offset, PlacementSettings
 
     tone_mai_ek = 0x0E48
     baseline = generator.compose_components(KO_KAI, None, None, tone_mai_ek)
@@ -143,6 +143,6 @@ def test_global_mark_offset_shifts_composed_tone_component(generator: ThaiPuaFon
 
     assert shifted is not None
     assert [p.glyph_name for p in shifted] == [p.glyph_name for p in baseline]
-    base_tx, base_ty = baseline[1].transform[4], baseline[1].transform[5]
-    new_tx, new_ty = shifted[1].transform[4], shifted[1].transform[5]
+    base_tx, base_ty = baseline[1].transform[0], baseline[1].transform[1]
+    new_tx, new_ty = shifted[1].transform[0], shifted[1].transform[1]
     assert (new_tx, new_ty) == (base_tx - 40, base_ty - 5)

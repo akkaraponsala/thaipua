@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from thaipua.core.font.specs import THAI_CONSONANTS, CompositeSpec, iter_composite_specs
-from thaipua.core.fonttools.settings import (
+from thaipua.core.domain.settings import (
     ROLE_ABOVE_VOWEL,
     ROLE_BELOW_VOWEL,
     ROLE_TO_MARK_CATEGORY,
@@ -21,15 +20,12 @@ from thaipua.core.fonttools.settings import (
     SUB_BELOW_VOWEL,
     SUB_CONSONANT,
     SUB_TONE_MARK,
-    ConsonantSettings,
     Offset,
     PlacementSettings,
     SnapConfig,
-    SubstitutionRule,
-    combo_key_from_codepoints,
-    context_canonicalizer,
-    default_placement_settings,
+    combo_key_for_marks,
 )
+from thaipua.core.font.specs import THAI_CONSONANTS, CompositeSpec, iter_composite_specs
 
 if TYPE_CHECKING:
     from thaipua.core.font.alternates import GlyphSubstitution
@@ -67,11 +63,9 @@ SNAP_LABELS: dict[str, str] = {
 
 @dataclass(slots=True)
 class AppState:
-    """Central mutable GUI state shared across panes."""
+    """Central mutable GUI state shared across panes (view state; the document lives in the session)."""
 
     font_path: str | None = None
-    pua_map: dict[str, str] = field(default_factory=dict)
-    settings: PlacementSettings = field(default_factory=default_placement_settings)
     active_consonant_uni: int | None = None
     active_pua_code: int | None = None
     consonants_page: int = 0
@@ -104,10 +98,7 @@ def infer_category(spec: CompositeSpec) -> MarkCategory | None:
 
 def combo_key_for(spec: CompositeSpec) -> str | None:
     """Return the spec's canonical combination key, or `None` for fewer than two marks."""
-    cps = [c for c in [spec.below_uni, spec.above_uni, spec.tone_uni] if c]
-    if len(cps) < 2:
-        return None
-    return combo_key_from_codepoints(cps)
+    return combo_key_for_marks(spec.below_uni, spec.above_uni, spec.tone_uni)
 
 
 def categories_for(spec: CompositeSpec) -> frozenset[MarkCategory]:
@@ -175,39 +166,23 @@ def current_mark_offset(spec: CompositeSpec, settings: PlacementSettings, *, cat
 
 def apply_offset(
     spec: CompositeSpec, settings: PlacementSettings, x: int, y: int, *, category: MarkCategory | None
-) -> None:
-    """Commit an `(x, y)` offset override for `spec` under the selected category.
+) -> PlacementSettings:
+    """Return settings with an `(x, y)` offset override committed for `spec` under the selected category.
 
     Writes the mark tier for single-mark glyphs and the combo tier for multi-mark
     glyphs; a zero delta clears the entry.
     """
     resolved = category if category is not None else infer_category(spec)
     if resolved is None:
-        return
-    cs = settings.consonants.setdefault(spec.cons_uni, ConsonantSettings())
-    combo_key = combo_key_for(spec)
+        return settings
     role = _role_for_category(resolved)
     mark_uni = _mark_uni_for_role(spec, role)
     if mark_uni is None:
-        return
+        return settings
+    offset = Offset(x, y) if (x, y) != (0, 0) else None
     if _mark_count(spec) > 1:
-        if x == 0 and y == 0:
-            combo_map = cs.combo_offsets.get(combo_key or "")
-            if combo_map is not None:
-                combo_map.pop(role, None)
-                if not combo_map:
-                    cs.combo_offsets.pop(combo_key or "", None)
-        else:
-            combo_role_map = cs.combo_offsets.setdefault(combo_key or "", {})
-            combo_role_map[role] = Offset(x, y)
-    else:
-        mark_role_map = cs.mark_offsets.setdefault(role, {})
-        if x == 0 and y == 0:
-            mark_role_map.pop(mark_uni, None)
-            if not mark_role_map:
-                cs.mark_offsets.pop(role, None)
-        else:
-            mark_role_map[mark_uni] = Offset(x, y)
+        return settings.with_combo_offset(spec.cons_uni, combo_key_for(spec) or "", role, offset)
+    return settings.with_mark_offset(spec.cons_uni, role, mark_uni, offset)
 
 
 def glyph_substitution_candidates(
@@ -258,28 +233,14 @@ def current_glyph_substitution(
 
 def apply_glyph_substitution(
     codepoint: int, cons_uni: int, glyph_name: str | None, settings: PlacementSettings, *, conditions: frozenset[str]
-) -> None:
-    """Set or clear the substitution rule matching the canonicalized conditions.
+) -> PlacementSettings:
+    """Return settings with the substitution rule for the canonicalized conditions set or cleared.
 
     An empty `glyph_name` removes the matching rule and keeps sibling rules. Conditions
     are canonicalized by the codepoint's category, so writes from contexts sharing one
     substitution slot address the same rule.
     """
-    conditions = context_canonicalizer(codepoint)(conditions)
-    cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
-    rules = cs.glyph_substitutions.get(codepoint, [])
-    for i, existing in enumerate(list(rules)):
-        if existing.conditions == conditions:
-            if glyph_name:
-                rules[i] = SubstitutionRule(replacement=glyph_name, conditions=conditions)
-                return
-            rules.pop(i)
-            if not rules:
-                cs.glyph_substitutions.pop(codepoint, None)
-            return
-    if glyph_name:
-        rules.append(SubstitutionRule(replacement=glyph_name, conditions=conditions))
-        cs.glyph_substitutions[codepoint] = rules
+    return settings.with_rule(cons_uni, codepoint, conditions, glyph_name)
 
 
 def current_snap(cons_uni: int, snap_name: str, settings: PlacementSettings) -> SnapConfig | None:
@@ -287,13 +248,11 @@ def current_snap(cons_uni: int, snap_name: str, settings: PlacementSettings) -> 
     return settings.for_consonant(cons_uni).snap_for(snap_name)
 
 
-def apply_snap(cons_uni: int, snap_name: str, enabled: bool, gap: int, settings: PlacementSettings) -> None:
-    """Enable a snap with its gap, or clear it entirely when disabled."""
-    cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
-    if not enabled:
-        cs.snap_configs.pop(snap_name, None)
-    else:
-        cs.snap_configs[snap_name] = SnapConfig(enabled=True, gap=gap)
+def apply_snap(
+    cons_uni: int, snap_name: str, enabled: bool, gap: int, settings: PlacementSettings
+) -> PlacementSettings:
+    """Return settings with a snap enabled at its gap, or cleared entirely when disabled."""
+    return settings.with_snap(cons_uni, snap_name, SnapConfig(enabled=True, gap=gap) if enabled else None)
 
 
 def current_base_offset(cons_uni: int, role: str, settings: PlacementSettings) -> Offset:
@@ -301,13 +260,9 @@ def current_base_offset(cons_uni: int, role: str, settings: PlacementSettings) -
     return settings.for_consonant(cons_uni).base_offsets.get(role, Offset())
 
 
-def apply_base_offset(cons_uni: int, role: str, x: int, y: int, settings: PlacementSettings) -> None:
-    """Commit a base-offset delta for `role`, clearing zero deltas."""
-    cs = settings.consonants.setdefault(cons_uni, ConsonantSettings())
-    if x == 0 and y == 0:
-        cs.base_offsets.pop(role, None)
-    else:
-        cs.base_offsets[role] = Offset(x, y)
+def apply_base_offset(cons_uni: int, role: str, x: int, y: int, settings: PlacementSettings) -> PlacementSettings:
+    """Return settings with a base-offset delta committed for `role`, clearing zero deltas."""
+    return settings.with_base_offset(cons_uni, role, Offset(x, y) if (x, y) != (0, 0) else None)
 
 
 def current_global_mark_offset(role: str, mark_uni: int, settings: PlacementSettings) -> Offset:
@@ -318,21 +273,17 @@ def current_global_mark_offset(role: str, mark_uni: int, settings: PlacementSett
     return group.get(mark_uni, Offset())
 
 
-def apply_global_mark_offset(role: str, mark_uni: int, x: int, y: int, settings: PlacementSettings) -> None:
-    """Commit a font-global offset for `mark_uni` under `role`, clearing zero deltas.
+def apply_global_mark_offset(
+    role: str, mark_uni: int, x: int, y: int, settings: PlacementSettings
+) -> PlacementSettings:
+    """Return settings with a font-global offset committed for `mark_uni` under `role`, clearing zero deltas.
 
     Unknown roles or codepoints outside the role's category are ignored.
     """
     category = ROLE_TO_MARK_CATEGORY.get(role)
     if category is None or mark_uni not in category:
-        return
-    group = settings.marks.setdefault(role, {})
-    if x == 0 and y == 0:
-        group.pop(mark_uni, None)
-        if not group:
-            settings.marks.pop(role, None)
-    else:
-        group[mark_uni] = Offset(x, y)
+        return settings
+    return settings.with_global_mark(role, mark_uni, Offset(x, y) if (x, y) != (0, 0) else None)
 
 
 def group_composites_by_consonant(pua_map: dict[str, str]) -> dict[int, list[CompositeSpec]]:

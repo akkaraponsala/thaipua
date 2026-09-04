@@ -3,21 +3,15 @@
 from __future__ import annotations
 
 import logging
-from enum import Enum
 from typing import Protocol
+
+from thaipua.core.domain.slots import SlotOwnership
 
 logger = logging.getLogger(__name__)
 
 TOOL_GLYPH_PREFIX = "thaipua_"
 
-
-class SlotOwnership(Enum):
-    """Ownership verdict for the glyph currently mapped at a PUA codepoint."""
-
-    FREE = "free"
-    OWNED = "owned"
-    REPLACEABLE = "replaceable"
-    LOCKED = "locked"
+__all__ = ["TOOL_GLYPH_PREFIX", "SlotOwnership", "classify_pua_slot"]
 
 
 class _CompositeGlyphLike(Protocol):
