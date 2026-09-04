@@ -9,7 +9,7 @@ from thaipua.core.domain.settings import PlacementSettings
 
 @dataclass(frozen=True, slots=True)
 class DocumentSnapshot:
-    """One undoable document state; constructed from copies and never mutated afterwards."""
+    """One undoable document state; layout maps are copies, settings share the frozen live reference."""
 
     base: int
     relocations: dict[str, str]

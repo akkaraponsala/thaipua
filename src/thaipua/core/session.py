@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from copy import deepcopy
 
 from thaipua.core.commands import DocumentCommand, DocumentSnapshot
 from thaipua.core.domain.settings import PlacementSettings, default_placement_settings
 from thaipua.core.layout import LayoutState
 
 _MAX_HISTORY = 100
-"""Cap on undo depth; one snapshot holds a relocation-dict copy plus a settings copy."""
+"""Cap on undo depth; one snapshot holds relocation-dict copies plus a shared settings reference."""
 
 
 class ProjectSession:
@@ -83,19 +82,24 @@ class ProjectSession:
         self._redo.clear()
 
     def snapshot(self) -> DocumentSnapshot:
-        """Capture the document by copy; mutating the live state never affects the result."""
+        """Capture the document; layout dicts are copied, settings are shared by reference.
+
+        Sharing is safe because placement settings are frozen: every mutation path
+        replaces the object wholesale (`replace_settings`), so a snapshotted
+        reference can never observe later edits.
+        """
         layout = self._layout
         return DocumentSnapshot(
             base=layout.base,
             relocations=dict(layout.relocations),
             approvals=dict(layout.approvals),
-            settings=deepcopy(self._settings),
+            settings=self._settings,
         )
 
     def restore(self, snapshot: DocumentSnapshot) -> None:
         """Replace the document from `snapshot`, revalidating the layout once."""
         self._layout.restore(snapshot.base, dict(snapshot.relocations), dict(snapshot.approvals))
-        self._settings = deepcopy(snapshot.settings)
+        self._settings = snapshot.settings
 
     def execute(self, label: str, mutate: Callable[[], None], *, coalesce_key: str | None = None) -> bool:
         """Run `mutate`, pushing one undo step when the document changed.

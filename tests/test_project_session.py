@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 from thaipua.core.commands import DocumentCommand, DocumentSnapshot
 from thaipua.core.domain.settings import Offset, default_placement_settings
 from thaipua.core.layout import LayoutState, load_layout_state
@@ -98,15 +101,15 @@ def test_open_document_adopts_and_clears() -> None:
     assert not session.can_undo
 
 
-def test_restore_replaces_settings_object_with_equal_content() -> None:
+def test_restore_readopts_the_snapshot_settings_reference() -> None:
     session = ProjectSession()
     before_settings = session.settings
     snapshot = session.snapshot()
+    assert snapshot.settings is before_settings
     _nudge_settings(session)
-    assert session.settings != before_settings
-    assert before_settings == default_placement_settings()
-    session.restore(snapshot)
     assert session.settings is not before_settings
+    session.restore(snapshot)
+    assert session.settings is before_settings
     assert session.settings == default_placement_settings()
 
 
@@ -156,10 +159,33 @@ def test_service_relocate_undo_restores_map(tmp_path: Path) -> None:
     assert service.pua_map["ก่"] == chr(moved["ก่"])
 
 
-def test_snapshot_never_aliases_live_state() -> None:
+def test_snapshot_shares_immutable_settings_but_copies_layout() -> None:
     session = ProjectSession()
     snapshot: DocumentSnapshot = session.snapshot()
+    assert snapshot.settings is session.settings
     session.layout.pin_relocations({"ก่": chr(0xE900)})
     _nudge_settings(session)
     assert snapshot.relocations == {}
     assert snapshot.settings == default_placement_settings()
+
+
+def test_layout_only_edits_keep_one_shared_settings_object() -> None:
+    session = ProjectSession()
+    live = session.settings
+    for i in range(5):
+
+        def pin(pin_index: int = i) -> None:
+            session.layout.pin_relocations({"ก่": chr(0xE900 + pin_index)})
+
+        assert session.execute(f"Pin {i}", pin) is True
+    assert session.snapshot().settings is live
+    assert session.undo() == "Pin 4"
+    assert session.settings is live
+    assert session.redo() == "Pin 4"
+    assert session.settings is live
+
+
+def test_live_settings_reject_in_place_mutation() -> None:
+    session = ProjectSession()
+    with pytest.raises(ValidationError):
+        session.settings.consonants = {}
