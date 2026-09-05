@@ -61,6 +61,7 @@ thaipua/
 - `MainWindow` is the **single mutator** of `AppState` (view state: selection, pagination, dirty). Document mutations (layout + settings) go through `FontService.execute*` as undoable commands — panes only emit signals, they never mutate state directly.
 - Keep these layers **PySide6-free** (stdlib + fontTools + pydantic only): `core/`, `gui/state.py`, `gui/font_service.py`, `gui/glyph_pen.py`. Only `app.py`, `main_window.py`, `theme.py`, `icons.py`, and `widgets/*` may import PySide6.
 - This split keeps `core/` unit-testable without `QApplication`.
+- Thai character sets have one source of truth: `core/domain/thai.py` (`CONSONANTS`, `THAI_CONSONANTS`, `CONSONANT_INDEX`, `*_VOWELS`, `TONE_MARKS`). `constants.THAI_CONSONANT_CHARS` and the public sets in `font/specs.py` derive from it — never re-list consonant codepoints.
 
 ### PUA Mapping & Layout Model
 

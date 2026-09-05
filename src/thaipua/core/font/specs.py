@@ -9,7 +9,7 @@ from thaipua.core.domain.cluster import try_key
 
 logger = logging.getLogger(__name__)
 
-THAI_CONSONANTS: set[int] = {consonant.value for consonant in _thai.CONSONANTS}
+THAI_CONSONANTS: set[int] = set(_thai.THAI_CONSONANTS)
 BELOW_VOWELS: set[int] = set(_thai.BELOW_VOWELS)
 ABOVE_VOWELS: set[int] = set(_thai.ABOVE_VOWELS)
 TONE_MARKS: set[int] = set(_thai.TONE_MARKS)

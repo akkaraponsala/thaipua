@@ -6,7 +6,7 @@ from thaipua.core.constants import THAI_CONSONANT_CHARS
 from thaipua.core.domain.errors import LayoutError
 from thaipua.core.domain.grid import LEGAL_COMBOS, MATERIALIZED
 from thaipua.core.domain.layout import fresh_engine, layout_from_dict
-from thaipua.core.domain.thai import CONSONANTS
+from thaipua.core.domain.thai import CONSONANT_INDEX, THAI_CONSONANTS
 from thaipua.core.font.map_validation import IssueSeverity, validate_pua_map
 from thaipua.core.layout import (
     LayoutState,
@@ -61,8 +61,15 @@ def test_key_order_matches_grid_order() -> None:
     assert canonical_layout(0xE000) == effective_layout(0xE000, {})
 
 
-def test_consonant_order_matches_the_domain_index() -> None:
-    assert [consonant.value for consonant in CONSONANTS] == [ord(char) for char in THAI_CONSONANT_CHARS]
+def test_consonant_text_round_trips_through_the_ordinal_math() -> None:
+    assert len(THAI_CONSONANT_CHARS) == len(set(THAI_CONSONANT_CHARS)) == len(THAI_CONSONANTS) == 42
+    for char in THAI_CONSONANT_CHARS:
+        codepoint = ord(char)
+        assert codepoint in THAI_CONSONANTS
+        assert THAI_CONSONANT_CHARS[CONSONANT_INDEX[codepoint]] == char
+        ordinal = cluster_ordinal(f"{char}่")
+        assert ordinal is not None
+        assert key_at_ordinal(ordinal)[0] == char
 
 
 def test_ordinals_agree_with_the_engine_full_table() -> None:

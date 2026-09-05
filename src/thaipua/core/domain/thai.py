@@ -84,6 +84,8 @@ CONSONANTS: tuple[Consonant, ...] = tuple(Consonant)
 
 CONSONANT_INDEX: dict[int, int] = {c.value: i for i, c in enumerate(CONSONANTS)}
 
+THAI_CONSONANTS: frozenset[int] = frozenset(CONSONANT_INDEX)
+
 BELOW_VOWELS: frozenset[int] = frozenset(v.value for v in BelowVowel)
 ABOVE_VOWELS: frozenset[int] = frozenset(v.value for v in AboveVowel)
 TONE_MARKS: frozenset[int] = frozenset(t.value for t in ToneMark)

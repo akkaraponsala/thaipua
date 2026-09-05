@@ -19,8 +19,8 @@ from thaipua.core.domain.errors import SettingsError
 from thaipua.core.domain.thai import (
     ABOVE_VOWELS,
     BELOW_VOWELS,
-    CONSONANT_INDEX,
     CONSONANT_PROTRUSION,
+    THAI_CONSONANTS,
     TONE_MARKS,
 )
 
@@ -41,7 +41,6 @@ MARK_GROUP_TO_ROLE: dict[str, str] = {
     "below_vowels": ROLE_BELOW_VOWEL,
 }
 ROLE_TO_MARK_GROUP: dict[str, str] = {v: k for k, v in MARK_GROUP_TO_ROLE.items()}
-_THAl_CONSONANTS: frozenset[int] = frozenset(CONSONANT_INDEX)
 ROLE_TO_MARK_CATEGORY: dict[str, frozenset[int]] = {
     ROLE_TONE_MARK: TONE_MARKS,
     ROLE_ABOVE_VOWEL: ABOVE_VOWELS,
@@ -132,7 +131,7 @@ def _parse_codepoint_key(key: Any) -> int:
 def _require_consonant(key: Any) -> int:
     """Parse a codepoint key, rejecting anything outside the Thai consonant set."""
     cp = _parse_codepoint_key(key)
-    if cp not in _THAl_CONSONANTS:
+    if cp not in THAI_CONSONANTS:
         raise ValueError(f"not a Thai consonant: U+{cp:04X}")
     return cp
 
@@ -298,7 +297,7 @@ def context_canonicalizer(codepoint: int) -> Callable[[frozenset[str]], frozense
     """Select the context canonicalizer matching `codepoint`'s character category."""
     if codepoint in TONE_MARKS:
         return canonicalize_tone_mark_context
-    if codepoint in _THAl_CONSONANTS:
+    if codepoint in THAI_CONSONANTS:
         protrusion = CONSONANT_PROTRUSION.get(codepoint)
         return lambda roles: canonicalize_consonant_context(roles, protrusion=protrusion)
     return canonicalize_substitution_context
