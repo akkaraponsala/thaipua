@@ -1,7 +1,5 @@
 """Unit tests for PUA-map persistence and free-codepoint search."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

@@ -1,7 +1,5 @@
 """Parse and build Bethesda Creation Engine string table files (.STRINGS/.DLSTRINGS/.ILSTRINGS)."""
 
-from __future__ import annotations
-
 import logging
 import struct
 from dataclasses import dataclass

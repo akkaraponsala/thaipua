@@ -1,7 +1,5 @@
 """Thai cluster model: the canonical domain unit for every map key."""
 
-from __future__ import annotations
-
 import re
 from typing import Annotated, Any
 

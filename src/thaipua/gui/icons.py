@@ -1,7 +1,5 @@
 """SVG icon provider tinting assets with the active palette."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Final, Literal
 

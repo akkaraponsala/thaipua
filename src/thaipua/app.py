@@ -1,7 +1,5 @@
 """PySide6 application entry point."""
 
-from __future__ import annotations
-
 import logging
 import sys
 from collections.abc import Sequence

@@ -1,7 +1,5 @@
 """Integration tests for `ThaiPuaFontGenerator.install_composite` against the sample font."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

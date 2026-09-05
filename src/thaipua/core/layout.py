@@ -1,7 +1,5 @@
 """Deterministic Thai-cluster-to-PUA layout over the domain engine: assignment, deltas, storage, conflicts."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -389,7 +387,7 @@ def load_layout_state(path: str | Path, *, store: JsonStore | None = None) -> La
         payload = source.load(path)
     except FileNotFoundError:
         return None
-    except (OSError, ValueError):
+    except OSError, ValueError:
         logger.warning("Failed to read layout file: %s", path, exc_info=True)
         return None
     return parse_layout_state(payload)
@@ -441,5 +439,5 @@ def _parse_hex(value: Any, fallback: int) -> int:
     """Interpret a JSON field as a hex codepoint, falling back on malformed input."""
     try:
         return int(str(value), 16)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return fallback

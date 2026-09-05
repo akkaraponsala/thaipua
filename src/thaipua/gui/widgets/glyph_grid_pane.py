@@ -1,7 +1,5 @@
 """Left pane grid of consonant and PUA variant cells with breadcrumb and pagination."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Literal
 

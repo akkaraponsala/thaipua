@@ -1,7 +1,5 @@
 """Report of foreign PUA slot occupants with override, relocate, and remap actions."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Signal

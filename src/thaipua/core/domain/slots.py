@@ -1,7 +1,5 @@
 """Single slot-policy source: one table plus an exhaustiveness assertion."""
 
-from __future__ import annotations
-
 from enum import StrEnum
 
 

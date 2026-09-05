@@ -1,7 +1,5 @@
 """Forward fontTools pen calls into `QPainterPath`-compatible sinks."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 

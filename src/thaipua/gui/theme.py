@@ -1,7 +1,5 @@
 """Light/dark/system theming with persisted mode selection."""
 
-from __future__ import annotations
-
 import json
 import logging
 from dataclasses import dataclass
@@ -220,7 +218,7 @@ def load_theme_mode(path: str | Path | None = None) -> ThemeMode:
         return DEFAULT_THEME_MODE
     try:
         raw = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         logger.warning("Could not read config at %s; using %s", config_path, DEFAULT_THEME_MODE.value)
         return DEFAULT_THEME_MODE
     if not isinstance(raw, dict):
@@ -241,7 +239,7 @@ def save_theme_mode(mode: ThemeMode, path: str | Path | None = None) -> None:
             existing = json.loads(config_path.read_text(encoding="utf-8"))
             if isinstance(existing, dict):
                 data = existing
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             logger.warning("Could not read existing config at %s; rewriting", config_path)
     data["theme"] = mode.value
     config_path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,5 @@
 """Discover GSUB single and alternate substitutions for glyph-substitution catalogs."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass

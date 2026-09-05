@@ -1,7 +1,5 @@
 """GUI-free backend for Thai-to-PUA encoding and composite PUA font generation."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from thaipua.core._reexports import CORE_EXPORTS, resolve_lazy_export

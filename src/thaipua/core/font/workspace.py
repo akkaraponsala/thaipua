@@ -1,7 +1,5 @@
 """Own the live font: lifecycle, output paths, and raw font access."""
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -155,5 +153,5 @@ def _coerce_int_field(table: Any | None, attr: str) -> int:
     value = getattr(table, attr, 0)
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0

@@ -1,7 +1,5 @@
 """A4: installer gate, validator, and conflict scan answer from the single policy table."""
 
-from __future__ import annotations
-
 import pytest
 from conftest import FakeGlyf, FakeGlyph
 

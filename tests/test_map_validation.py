@@ -1,7 +1,5 @@
 """Unit tests for `validate_pua_map` and the editor's codepoint input parsing."""
 
-from __future__ import annotations
-
 from conftest import FakeGlyf, make_glyf
 
 from thaipua.core.constants import PUA_RANGE_START

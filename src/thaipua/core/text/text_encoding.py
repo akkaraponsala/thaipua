@@ -1,7 +1,5 @@
 """Text-file codec detection (byte-order marks and content sniffing)."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 

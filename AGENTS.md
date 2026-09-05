@@ -117,7 +117,7 @@ Settings JSON shape: `{version, metadata, marks: {tone_marks/above_vowels/below_
 ## Build, Test, and Development Commands
 
 ```bash
-uv venv --python 3.12         # create venv
+uv venv --python 3.14         # create venv
 uv sync                       # sync all deps (app + dev)
 
 uv run ruff format .          # format
@@ -143,7 +143,7 @@ Don't commit these unless intentional. Tests isolate them via explicit path para
 
 ## Coding Style & Naming Conventions
 
-- Python 3.12, 4-space indent, `snake_case` functions/modules, `PascalCase` classes. Ruff: `line-length 120`, double quotes.
+- Python 3.14, 4-space indent, `snake_case` functions/modules, `PascalCase` classes. Ruff: `line-length 120`, double quotes.
 - Ruff `select`: `B, E, F, G, I, N, PT, UP, ERA, RUF, SIM`. `pyproject.toml` already extends `ignore-names` for Qt/fontTools camelCase (`paintEvent`, `addComponent`, `moveTo`, ...) — extend that list for new overrides instead of renaming.
 - mypy: `strict` + `disallow_untyped_defs`; `PySide6.*`, `fontTools.*`, `pydantic.*`, `qdarktheme.*`, `darkdetect.*` are `ignore_missing_imports`.
 - Prefer typed exceptions (`StringTableError` subclasses) or `logging` over bare excepts; swallow errors only as an intentional fallback.
@@ -176,4 +176,4 @@ Don't commit these unless intentional. Tests isolate them via explicit path para
 
 ## CI Mirrors Local Commands
 
-`.github/workflows/ci.yml` runs `ruff check` + `ruff format --check`, `mypy`, and `pytest` on pushes to `main` and PRs. `.github/workflows/release.yml` builds the Windows bundle on `v*.*.*` tags: Python 3.12, `uv sync`, `uv run pyside6-deploy -c pysidedeploy.spec`, zips `build/thaipua.dist/*` → `ThaiPUA-Windows.zip`, attaches to a GitHub Release.
+`.github/workflows/ci.yml` runs `ruff check` + `ruff format --check`, `mypy`, and `pytest` on pushes to `main` and PRs. `.github/workflows/release.yml` builds the Windows bundle on `v*.*.*` tags: Python 3.14, `uv sync`, `uv run pyside6-deploy -c pysidedeploy.spec`, zips `build/thaipua.dist/*` → `ThaiPUA-Windows.zip`, attaches to a GitHub Release.

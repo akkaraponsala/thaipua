@@ -1,7 +1,5 @@
 """Unit tests for Bethesda string-table parsing, building, and corruption handling."""
 
-from __future__ import annotations
-
 import struct
 from pathlib import Path
 from typing import cast

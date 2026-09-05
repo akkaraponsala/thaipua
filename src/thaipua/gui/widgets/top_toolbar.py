@@ -1,7 +1,5 @@
 """Top action toolbar: Open/Save Font, Profiles, Decode/Encode PUA, Find Substitutions, Settings."""
 
-from __future__ import annotations
-
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QSizePolicy, QWidget
 

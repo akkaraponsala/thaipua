@@ -1,7 +1,5 @@
 """Replayable project-document commands over whole-document snapshots."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from thaipua.core.domain.settings import PlacementSettings

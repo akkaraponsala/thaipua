@@ -1,7 +1,5 @@
 """Slice 2 pin: `try_key` is the single cluster classifier behind every entry point."""
 
-from __future__ import annotations
-
 import logging
 
 from _pytest.logging import LogCaptureFixture

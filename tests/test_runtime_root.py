@@ -1,7 +1,5 @@
 """Unit tests for the injectable `RuntimeRoot` data-directory isolation (A14)."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from thaipua.core.paths import (

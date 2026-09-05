@@ -1,7 +1,5 @@
 """Unit tests for PUA occupancy scanning over duck-typed fonts."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from conftest import FakeCompositeGlyph, FakeGlyf, FakeGlyph

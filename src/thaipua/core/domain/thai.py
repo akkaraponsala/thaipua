@@ -1,7 +1,5 @@
 """Thai orthographic constants as concrete enum classes."""
 
-from __future__ import annotations
-
 from enum import IntEnum
 
 

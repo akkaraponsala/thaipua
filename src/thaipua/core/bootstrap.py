@@ -1,7 +1,5 @@
 """Create runtime-data directories under the app-data root."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from thaipua.core.paths import APP_DATA_DIR, PROFILES_DIR_NAME

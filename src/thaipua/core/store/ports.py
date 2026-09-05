@@ -1,7 +1,5 @@
 """Abstract persistence ports; core logic talks to stores, never to disk directly."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any, Protocol
 

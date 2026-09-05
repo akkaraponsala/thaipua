@@ -1,7 +1,5 @@
 """Right pane exposing global/per-glyph mark offsets, base offsets, glyph substitutions, and snap configs."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 

@@ -7,7 +7,7 @@ name = "thaipua"
 version = "0.1.5"
 description = "Converts Thai text to PUA Unicode and builds composed fonts mapped to PUA code points for games lacking proper complex Thai script rendering support."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "PySide6",
     "darkdetect",
@@ -53,7 +53,7 @@ default-groups = ["dev"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+target-version = "py314"
 exclude = ["src/qdarktheme"]
 
 [tool.ruff.format]
@@ -111,7 +111,7 @@ extend-ignore-names = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 disallow_untyped_defs = true
 exclude = ["src/qdarktheme"]

@@ -1,7 +1,5 @@
 """Main window coordinating panes, state mutations, and backend calls."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path

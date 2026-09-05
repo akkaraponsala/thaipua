@@ -1,7 +1,5 @@
 """Slice 1: strict Pydantic domain settings — codec, tier rule, resolve(), with_* copies."""
 
-from __future__ import annotations
-
 import pytest
 
 from thaipua.core.domain.errors import SettingsError

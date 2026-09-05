@@ -1,7 +1,5 @@
 """Unit tests for the undoable project session: whole-document snapshots, coalescing, and bounds."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

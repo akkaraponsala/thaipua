@@ -1,7 +1,5 @@
 """Injective PUA map with the reverse as a derived view."""
 
-from __future__ import annotations
-
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator

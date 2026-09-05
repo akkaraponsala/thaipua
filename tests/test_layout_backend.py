@@ -1,7 +1,5 @@
 """Slice 3 pin: the domain `LayoutEngine` computes every production map; JSON is untouched."""
 
-from __future__ import annotations
-
 import pytest
 
 from thaipua.core.constants import THAI_CONSONANT_CHARS

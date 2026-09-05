@@ -1,7 +1,5 @@
 """Classify PUA slot occupants to decide whether composite installs may overwrite them."""
 
-from __future__ import annotations
-
 import logging
 from typing import Protocol
 

@@ -1,7 +1,5 @@
 """Placement settings: Pydantic schema with strict wire codec and explicit version errors."""
 
-from __future__ import annotations
-
 import re
 from collections.abc import Callable, Container, Iterable
 from typing import Annotated, Any, Literal

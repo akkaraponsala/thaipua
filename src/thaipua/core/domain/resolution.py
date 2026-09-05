@@ -1,7 +1,5 @@
 """Resolution commands: the single entry point for slot decisions."""
 
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict
 
 from thaipua.core.domain.cluster import ThaiCluster

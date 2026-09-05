@@ -1,7 +1,5 @@
 """Phase 0 golden test: the v2 stride-60 grid is frozen by digest, not by description."""
 
-from __future__ import annotations
-
 import hashlib
 
 from thaipua.core.domain.cluster import ThaiCluster

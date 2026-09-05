@@ -1,7 +1,5 @@
 """Unit tests for encoding-map loading, SARA AM normalization, and encode transforms."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

@@ -1,7 +1,5 @@
 """Modal PUA mapping editor with a filterable table and live validation badges."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any

@@ -1,7 +1,5 @@
 """Integration tests for the file encode/decode pipeline over text and string tables."""
 
-from __future__ import annotations
-
 import json
 import struct
 from pathlib import Path

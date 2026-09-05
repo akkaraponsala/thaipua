@@ -1,7 +1,5 @@
 """Middle pane rendering the glyph canvas with typographic guides and pan/zoom navigation."""
 
-from __future__ import annotations
-
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,

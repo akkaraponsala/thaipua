@@ -1,7 +1,5 @@
 """Unit tests for placement-offset tier resolution and substitution matching."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

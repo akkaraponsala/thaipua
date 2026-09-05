@@ -1,7 +1,5 @@
 """Mutable application state plus helpers reading and writing placement-settings tiers."""
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass

@@ -1,7 +1,5 @@
 """Unit tests for text-file encoding detection from byte-order marks and content sniffing."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from thaipua.core.text.text_encoding import detect_text_encoding

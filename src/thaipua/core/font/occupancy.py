@@ -1,7 +1,5 @@
 """Scan a font's PUA range and report each occupied slot's owner and content for user review."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 

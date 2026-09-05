@@ -1,7 +1,5 @@
 """Preview and install rendering against a `FontWorkspace` without touching layout state."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field

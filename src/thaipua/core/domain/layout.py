@@ -1,7 +1,5 @@
 """Layout engine: the single source of truth for base, pins, and approvals."""
 
-from __future__ import annotations
-
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field

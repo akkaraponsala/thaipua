@@ -1,7 +1,5 @@
 """Footer status bar showing a persistent warning notice."""
 
-from __future__ import annotations
-
 from PySide6.QtWidgets import QStatusBar, QWidget
 
 

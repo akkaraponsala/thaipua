@@ -1,7 +1,5 @@
 """Slice 1 pin: construction order is the stored key form; boundaries normalize input order."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

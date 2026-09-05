@@ -1,7 +1,5 @@
 """G9: the domain layer stays free of fontTools/Qt/direct-IO dependencies."""
 
-from __future__ import annotations
-
 import ast
 import subprocess
 import sys

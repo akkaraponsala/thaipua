@@ -1,7 +1,5 @@
 """Slot grid: the fixed stride-60 combination space."""
 
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict
 
 from thaipua.core.domain.errors import GridError

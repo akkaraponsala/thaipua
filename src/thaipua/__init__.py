@@ -1,7 +1,5 @@
 """Thai-to-PUA encoding and composite PUA font generation, with a PySide6 desktop frontend."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from thaipua.core._reexports import APP_EXPORTS, resolve_lazy_export

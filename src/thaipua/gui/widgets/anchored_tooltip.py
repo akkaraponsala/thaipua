@@ -1,7 +1,5 @@
 """App-wide tooltips anchored under the hovered widget instead of beside the mouse."""
 
-from __future__ import annotations
-
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QLabel, QWidget

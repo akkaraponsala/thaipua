@@ -1,7 +1,5 @@
 """Validate PUA mappings structurally and against live font slots without mutating anything."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING

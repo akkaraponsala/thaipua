@@ -1,7 +1,5 @@
 """Encode and decode files between Thai text and PUA codepoints, routing by extension."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -103,7 +101,7 @@ def _transform_text_file(
     try:
         content = input_path.read_text(encoding=encoding)
         transformed = transform_text(content)
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         logger.exception("Failed to process '%s'", input_path)
         return (False, None)
     report = _report_for(input_path, [content]) if strict else None
@@ -150,7 +148,7 @@ def _route_files(
             logger.info("Processing string table file: '%s'", input_path)
             try:
                 report = string_table_handler(input_path, output_path)
-            except (OSError, StringTableError):
+            except OSError, StringTableError:
                 logger.exception("Failed to process '%s'", input_path)
                 failed += 1
             else:

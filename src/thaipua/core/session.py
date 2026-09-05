@@ -1,7 +1,5 @@
 """Undoable project document binding layout state, placement settings, and history."""
 
-from __future__ import annotations
-
 from collections.abc import Callable
 
 from thaipua.core.commands import DocumentCommand, DocumentSnapshot

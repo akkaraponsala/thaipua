@@ -1,7 +1,5 @@
 """Thai cluster constants, PUA-map persistence, and free-codepoint search for relocations."""
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 from typing import Any
@@ -89,7 +87,7 @@ def load_pua_map_dict(dict_path: str | Path, *, store: JsonStore | None = None) 
     except FileNotFoundError:
         logger.error("Map file not found: '%s'", dict_path)
         return {}
-    except (OSError, ValueError):
+    except OSError, ValueError:
         logger.exception("Failed to parse map file: '%s'", dict_path)
         return {}
     return parse_pua_map_payload(raw)

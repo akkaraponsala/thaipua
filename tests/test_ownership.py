@@ -1,7 +1,5 @@
 """Unit tests for PUA slot ownership classification."""
 
-from __future__ import annotations
-
 from conftest import make_glyf
 
 from thaipua.core.font.ownership import TOOL_GLYPH_PREFIX, SlotOwnership, classify_pua_slot

@@ -1,7 +1,5 @@
 """Disk and in-memory `JsonStore` implementations."""
 
-from __future__ import annotations
-
 import copy
 import json
 from pathlib import Path

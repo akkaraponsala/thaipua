@@ -1,7 +1,5 @@
 """Integration tests for in-memory CFF-to-TrueType conversion using a built `.otf` fixture."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 

@@ -1,7 +1,5 @@
 """Error hierarchy for the domain layer."""
 
-from __future__ import annotations
-
 
 class ThaiPuaError(Exception):
     """Base error for all domain failures."""

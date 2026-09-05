@@ -1,7 +1,5 @@
 """Settings file persistence; the schema itself lives in `core.domain.settings`."""
 
-from __future__ import annotations
-
 import json
 import logging
 from pathlib import Path

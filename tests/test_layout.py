@@ -1,7 +1,5 @@
 """Unit tests for the deterministic Thai-cluster-to-PUA layout model."""
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 

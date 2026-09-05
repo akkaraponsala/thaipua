@@ -11,13 +11,13 @@ ThaiPUA is a utility that converts Thai text into PUA Unicode and generates comp
 
 ## Requirements
 
-- Python 3.12+
+- Python 3.14+
 - uv - https://docs.astral.sh/uv/
 
 ## Install
 
 ```bash
-uv venv --python 3.12
+uv venv --python 3.14
 uv sync
 ```
 

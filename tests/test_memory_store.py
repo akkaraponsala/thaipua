@@ -1,7 +1,5 @@
 """G8: document persistence runs against an in-memory store with zero disk IO."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 

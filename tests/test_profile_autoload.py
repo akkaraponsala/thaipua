@@ -1,7 +1,5 @@
 """Verified per-font profile auto-load: an identity match applies, everything else falls back to defaults."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

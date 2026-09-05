@@ -1,7 +1,5 @@
 """Backend facade over the workspace, renderer, and layout store; the sole bridge between GUI and core."""
 
-from __future__ import annotations
-
 import json
 import logging
 from collections.abc import Callable, Iterable
@@ -364,7 +362,7 @@ class FontService:
         units: int | None = None
         try:
             units = int(font["head"].unitsPerEm)
-        except (KeyError, AttributeError, TypeError, ValueError):
+        except KeyError, AttributeError, TypeError, ValueError:
             units = None
         return (family, units)
 

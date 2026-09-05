@@ -1,7 +1,5 @@
 """Cached glyph bounding-box lookup for placement calculations."""
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING

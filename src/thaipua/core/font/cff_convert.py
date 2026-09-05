@@ -1,7 +1,5 @@
 """Convert CFF-flavored fonts to TrueType outlines in memory so installs work on `.otf` sources."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
